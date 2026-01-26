@@ -5,7 +5,7 @@ import { captureAndUploadScreenshot, waitForPageReady } from '../utils/screensho
 import type { Permit, ScraperResult, Jurisdiction } from '../types/index.js';
 
 const JURISDICTION: Jurisdiction = 'anne_arundel_county_md';
-const BASE_URL = 'https://aca-prod.accela.com/AACO/Cap/CapHome.aspx?module=Permits&TabName=Permits';
+const BASE_URL = 'https://aca-prod.accela.com/AACO/Cap/CapHome.aspx?module=Permits';
 const RECORD_TYPE_TO_SELECT = 'Non-Residential Alteration Permit';
 
 interface AACoPermit {
@@ -36,141 +36,207 @@ export async function scrapeAnneArundelCounty(): Promise<ScraperResult> {
     await page.waitForTimeout(3000);
 
     // Handle any disclaimer popup
-    const disclaimerAccept = await page.$('input[id*="btnDisclaimerAccept"], a:has-text("I Accept"), button:has-text("Accept")');
-    if (disclaimerAccept) {
-      console.log(`[${JURISDICTION}] Accepting disclaimer...`);
-      await disclaimerAccept.click();
-      await page.waitForLoadState('networkidle');
-      await page.waitForTimeout(2000);
+    try {
+      const disclaimerButton = await page.$('input[value="I Accept"], button:has-text("I Accept"), a:has-text("I Accept"), input[id*="btnAccept"]');
+      if (disclaimerButton) {
+        console.log(`[${JURISDICTION}] Accepting disclaimer...`);
+        await disclaimerButton.click();
+        await page.waitForLoadState('networkidle');
+        await page.waitForTimeout(2000);
+      }
+    } catch {
+      console.log(`[${JURISDICTION}] No disclaimer found or already accepted`);
     }
 
-    // Select record type from dropdown
+    // Look for the record type dropdown
     console.log(`[${JURISDICTION}] Looking for record type dropdown...`);
-    const recordTypeDropdown = await page.$(
-      'select[id*="RecordType"], select[id*="recordType"], select[id*="ddlRecordType"], select[name*="RecordType"], select[id*="Type"]'
-    );
+
+    const dropdownSelectors = [
+      'select[id*="ddlRecordType"]',
+      'select[id*="RecordType"]',
+      'select[id*="PermitType"]',
+      'select[id*="ddlPermitType"]',
+      'select[id*="Type"]',
+      'select[name*="RecordType"]',
+      'select[name*="PermitType"]',
+    ];
+
+    let recordTypeDropdown = null;
+    for (const selector of dropdownSelectors) {
+      recordTypeDropdown = await page.$(selector);
+      if (recordTypeDropdown) {
+        console.log(`[${JURISDICTION}] Found dropdown with selector: ${selector}`);
+        break;
+      }
+    }
 
     if (recordTypeDropdown) {
-      console.log(`[${JURISDICTION}] Found record type dropdown, selecting "${RECORD_TYPE_TO_SELECT}"...`);
+      // Get all options and log them for debugging
+      const options = await recordTypeDropdown.$$eval('option', opts =>
+        opts.map(o => ({ value: o.value, text: o.textContent?.trim() || '' }))
+      );
+      console.log(`[${JURISDICTION}] Available record types:`, options.map(o => o.text).slice(0, 10));
 
-      // Get all options to find the right one
-      const options = await recordTypeDropdown.$$('option');
-      let found = false;
+      // Find and select the non-residential alteration permit option
+      const targetOption = options.find(opt =>
+        opt.text.toLowerCase().includes('non-residential') &&
+        opt.text.toLowerCase().includes('alteration')
+      );
 
-      for (const option of options) {
-        const text = await option.textContent();
-        if (text && text.toLowerCase().includes('non-residential') && text.toLowerCase().includes('alteration')) {
-          const value = await option.getAttribute('value');
-          if (value) {
-            await recordTypeDropdown.selectOption({ value });
-            found = true;
-            console.log(`[${JURISDICTION}] Selected record type: ${text}`);
-            break;
+      if (targetOption && targetOption.value) {
+        console.log(`[${JURISDICTION}] Selecting: ${targetOption.text}`);
+        await recordTypeDropdown.selectOption({ value: targetOption.value });
+        await page.waitForTimeout(1500);
+      } else {
+        console.log(`[${JURISDICTION}] Could not find Non-Residential Alteration, trying non-residential option`);
+        const nonResOption = options.find(opt => opt.text.toLowerCase().includes('non-residential'));
+        if (nonResOption && nonResOption.value) {
+          await recordTypeDropdown.selectOption({ value: nonResOption.value });
+          await page.waitForTimeout(1500);
+        } else {
+          // Try commercial option as fallback
+          const commercialOption = options.find(opt => opt.text.toLowerCase().includes('commercial'));
+          if (commercialOption && commercialOption.value) {
+            await recordTypeDropdown.selectOption({ value: commercialOption.value });
+            await page.waitForTimeout(1500);
           }
         }
       }
-
-      if (!found) {
-        // Try selecting by label
-        try {
-          await recordTypeDropdown.selectOption({ label: RECORD_TYPE_TO_SELECT });
-          found = true;
-        } catch {
-          console.log(`[${JURISDICTION}] Could not find exact match, trying partial match...`);
-        }
-      }
-
-      await page.waitForTimeout(1000);
     } else {
-      console.log(`[${JURISDICTION}] No record type dropdown found, proceeding with search...`);
+      console.log(`[${JURISDICTION}] No record type dropdown found, proceeding with date filter only`);
     }
 
-    // Set date range for last 7 days
+    // Set date range - last 7 days
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - 7);
 
-    // Find and fill date fields
-    const startDateInput = await page.$('input[id*="txtGSStartDate"], input[id*="StartDate"]');
-    if (startDateInput) {
-      await startDateInput.fill(formatDate(startDate));
+    const startDateStr = formatDate(startDate);
+    const endDateStr = formatDate(endDate);
+
+    console.log(`[${JURISDICTION}] Setting date range: ${startDateStr} to ${endDateStr}`);
+
+    // Find date inputs
+    const dateInputSelectors = {
+      start: [
+        'input[id*="txtGSStartDate"]',
+        'input[id*="StartDate"]',
+        'input[id*="FromDate"]',
+        'input[id*="beginDate"]',
+      ],
+      end: [
+        'input[id*="txtGSEndDate"]',
+        'input[id*="EndDate"]',
+        'input[id*="ToDate"]',
+        'input[id*="endDate"]',
+      ]
+    };
+
+    // Set start date
+    for (const selector of dateInputSelectors.start) {
+      const startInput = await page.$(selector);
+      if (startInput) {
+        console.log(`[${JURISDICTION}] Found start date input: ${selector}`);
+        await startInput.click();
+        await startInput.fill('');
+        await startInput.type(startDateStr, { delay: 50 });
+        break;
+      }
     }
 
-    const endDateInput = await page.$('input[id*="txtGSEndDate"], input[id*="EndDate"]');
-    if (endDateInput) {
-      await endDateInput.fill(formatDate(endDate));
+    // Set end date
+    for (const selector of dateInputSelectors.end) {
+      const endInput = await page.$(selector);
+      if (endInput) {
+        console.log(`[${JURISDICTION}] Found end date input: ${selector}`);
+        await endInput.click();
+        await endInput.fill('');
+        await endInput.type(endDateStr, { delay: 50 });
+        break;
+      }
     }
 
-    // Execute search
-    const searchButton = await page.$('a[id*="btnNewSearch"], input[id*="btnSearch"], a.ACA_TabSelected:has-text("Search"), a:has-text("Search")');
-    if (searchButton) {
-      console.log(`[${JURISDICTION}] Executing search...`);
-      await searchButton.click();
-      await page.waitForLoadState('networkidle');
-      await page.waitForTimeout(3000);
+    await page.waitForTimeout(500);
+
+    // Click search button
+    const searchSelectors = [
+      'a[id*="btnNewSearch"]',
+      'input[id*="btnSearch"]',
+      'button[id*="btnSearch"]',
+      'a[id*="Search"]',
+      'input[value="Search"]',
+      'button:has-text("Search")',
+    ];
+
+    let searchClicked = false;
+    for (const selector of searchSelectors) {
+      const searchButton = await page.$(selector);
+      if (searchButton) {
+        console.log(`[${JURISDICTION}] Clicking search button: ${selector}`);
+        await searchButton.click();
+        searchClicked = true;
+        break;
+      }
     }
 
-    // Extract permits from results
+    if (!searchClicked) {
+      console.log(`[${JURISDICTION}] No search button found, trying to submit form`);
+      await page.keyboard.press('Enter');
+    }
+
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(3000);
+
+    // Extract permit data from the results
     const rawPermits = await extractPermitsFromPage(page);
-    console.log(`[${JURISDICTION}] Found ${rawPermits.length} permits on page 1`);
+    console.log(`[${JURISDICTION}] Found ${rawPermits.length} permits`);
 
     // Handle pagination
-    let currentPage = 1;
-    const maxPages = 10;
+    let pageNum = 1;
+    const maxPages = 5;
 
-    while (currentPage < maxPages) {
-      // Look for next page link
-      const nextLink = await page.$('a[id*="_lnkBtnNext"], a:has-text("Next >"), a.aca_pagination_PrevNext:has-text("Next")');
-      if (!nextLink) break;
+    while (pageNum < maxPages && rawPermits.length > 0) {
+      const nextButton = await page.$('a[id*="lnkNextPage"], a:has-text("Next"), a[title*="Next"]');
+      if (!nextButton) break;
 
-      const nextClass = await nextLink.getAttribute('class');
-      if (nextClass?.includes('aspNetDisabled') || nextClass?.includes('disabled')) break;
+      const isDisabled = await nextButton.getAttribute('class');
+      if (isDisabled?.includes('aspNetDisabled') || isDisabled?.includes('disabled')) break;
 
-      console.log(`[${JURISDICTION}] Going to page ${currentPage + 1}...`);
-      await nextLink.click();
+      console.log(`[${JURISDICTION}] Going to page ${pageNum + 1}...`);
+      await nextButton.click();
       await page.waitForLoadState('networkidle');
       await page.waitForTimeout(2000);
 
       const pagePermits = await extractPermitsFromPage(page);
       if (pagePermits.length === 0) break;
-
       rawPermits.push(...pagePermits);
-      currentPage++;
+      pageNum++;
     }
 
-    // Now click into each permit to get details and screenshots
-    console.log(`[${JURISDICTION}] Processing ${rawPermits.length} permits for details and screenshots...`);
+    // Process each permit for details and screenshots (limit to first 10)
+    const permitsToProcess = rawPermits.slice(0, 10);
+    console.log(`[${JURISDICTION}] Processing ${permitsToProcess.length} permits for details...`);
 
-    for (let i = 0; i < rawPermits.length; i++) {
-      const raw = rawPermits[i];
-
+    for (let i = 0; i < permitsToProcess.length; i++) {
+      const raw = permitsToProcess[i];
       try {
-        console.log(`[${JURISDICTION}] Processing permit ${i + 1}/${rawPermits.length}: ${raw['Record Number']}`);
+        console.log(`[${JURISDICTION}] Processing ${i + 1}/${permitsToProcess.length}: ${raw['Record Number']}`);
 
-        // Navigate to permit detail page
-        const detailUrl = await navigateToPermitDetail(page, raw['Record Number']);
-        if (detailUrl) {
-          raw['Detail URL'] = detailUrl;
+        const permitLink = await page.$(`a:has-text("${raw['Record Number']}")`);
+        if (permitLink) {
+          await permitLink.click();
+          await page.waitForLoadState('networkidle');
+          await page.waitForTimeout(2000);
 
-          // Wait for detail page to load
-          await waitForPageReady(page);
+          raw['Detail URL'] = page.url();
 
-          // Extract additional details from detail page
-          const additionalDetails = await extractPermitDetails(page);
-          if (additionalDetails.applicantName) {
-            raw['Applicant Name'] = additionalDetails.applicantName;
-          }
-          if (additionalDetails.description) {
-            raw['Description'] = additionalDetails.description || raw['Description'];
-          }
+          const details = await extractPermitDetails(page);
+          if (details.applicantName) raw['Applicant Name'] = details.applicantName;
+          if (details.description) raw['Description'] = details.description;
 
-          // Take screenshot
           const screenshotUrl = await captureAndUploadScreenshot(page, raw['Record Number'], JURISDICTION);
-          if (screenshotUrl) {
-            raw['Screenshot URL'] = screenshotUrl;
-          }
+          if (screenshotUrl) raw['Screenshot URL'] = screenshotUrl;
 
-          // Go back to results
           await page.goBack();
           await page.waitForLoadState('networkidle');
           await page.waitForTimeout(1000);
@@ -180,10 +246,10 @@ export async function scrapeAnneArundelCounty(): Promise<ScraperResult> {
       }
     }
 
-    // Transform to standard format and filter for relevance
+    // Transform and filter permits
     let skippedCount = 0;
     for (const raw of rawPermits) {
-      const permit = transformAACoPermit(raw);
+      const permit = transformPermit(raw);
       if (permit) {
         if (isRelevantForClipperConstruction(permit.description, permit.permit_type, permit.project_type)) {
           permits.push(permit);
@@ -194,8 +260,7 @@ export async function scrapeAnneArundelCounty(): Promise<ScraperResult> {
     }
 
     await context.close();
-
-    console.log(`[${JURISDICTION}] Scrape complete. Relevant permits: ${permits.length}, Skipped: ${skippedCount}`);
+    console.log(`[${JURISDICTION}] Scrape complete. Found: ${permits.length}, Skipped: ${skippedCount}`);
 
     return {
       jurisdiction: JURISDICTION,
@@ -215,136 +280,38 @@ export async function scrapeAnneArundelCounty(): Promise<ScraperResult> {
   }
 }
 
-async function navigateToPermitDetail(page: Page, recordNumber: string): Promise<string | null> {
-  try {
-    // Find the link for this permit number
-    const permitLink = await page.$(`a:has-text("${recordNumber}")`);
-
-    if (permitLink) {
-      // Check if it's a JavaScript link
-      const href = await permitLink.getAttribute('href');
-      const onclick = await permitLink.getAttribute('onclick');
-
-      if (onclick || (href && href.startsWith('javascript:'))) {
-        // It's a JavaScript link, click it
-        await permitLink.click();
-        await page.waitForLoadState('networkidle');
-        await page.waitForTimeout(2000);
-        return page.url();
-      } else if (href) {
-        // Regular link
-        await permitLink.click();
-        await page.waitForLoadState('networkidle');
-        await page.waitForTimeout(2000);
-        return page.url();
-      }
-    }
-
-    return null;
-  } catch (error) {
-    console.error(`[${JURISDICTION}] Error navigating to permit detail:`, error);
-    return null;
-  }
-}
-
-async function extractPermitDetails(page: Page): Promise<{ applicantName?: string; description?: string }> {
-  const details: { applicantName?: string; description?: string } = {};
-
-  try {
-    // Look for applicant information
-    const applicantSelectors = [
-      'span[id*="Applicant"]',
-      'td:has-text("Applicant") + td',
-      'label:has-text("Applicant") + span',
-      'div[id*="applicant"]',
-      '.applicant-name',
-      'span[id*="lblContactName"]',
-    ];
-
-    for (const selector of applicantSelectors) {
-      const element = await page.$(selector);
-      if (element) {
-        const text = await element.textContent();
-        if (text && text.trim()) {
-          details.applicantName = text.trim();
-          break;
-        }
-      }
-    }
-
-    // Look for description/scope of work
-    const descriptionSelectors = [
-      'span[id*="Description"]',
-      'td:has-text("Description") + td',
-      'td:has-text("Scope of Work") + td',
-      'label:has-text("Work Description") + span',
-      'div[id*="workDescription"]',
-      'textarea[id*="Description"]',
-      'span[id*="lblWorkDescription"]',
-    ];
-
-    for (const selector of descriptionSelectors) {
-      const element = await page.$(selector);
-      if (element) {
-        const text = await element.textContent();
-        if (text && text.trim() && text.length > 10) {
-          details.description = text.trim();
-          break;
-        }
-      }
-    }
-  } catch (error) {
-    console.error(`[${JURISDICTION}] Error extracting permit details:`, error);
-  }
-
-  return details;
-}
-
 async function extractPermitsFromPage(page: Page): Promise<AACoPermit[]> {
   const permits: AACoPermit[] = [];
 
   try {
-    await page.waitForSelector(
-      'table[id*="GlobalSearchResult"], table.ACA_Grid, div[id*="divGlobalSearchResult"]',
-      { timeout: 10000 }
-    );
+    await page.waitForSelector('table[id*="GridView"], table[id*="gvPermit"], div[id*="divGlobalSearchResult"]', { timeout: 10000 });
 
-    const rows = await page.$$(
-      'table[id*="GlobalSearchResult"] tbody tr, div[id*="divGlobalSearchResult"] table tbody tr'
-    );
+    const rows = await page.$$('table[id*="GridView"] tbody tr, table[id*="gvPermit"] tbody tr, div[id*="divGlobalSearchResult"] table tbody tr');
 
     for (const row of rows) {
       const cells = await row.$$('td');
       if (cells.length < 3) continue;
 
       const cellTexts = await Promise.all(
-        cells.map(async (cell) => {
-          const text = await cell.textContent();
-          return text?.trim() || '';
-        })
+        cells.map(async (cell) => (await cell.textContent())?.trim() || '')
       );
 
-      // Try to get record number from link
-      const recordLink = await row.$('a[href*="Cap/CapDetail"], a[id*="lnkPermitNumber"], a[onclick]');
-      let recordNumber = '';
-      if (recordLink) {
-        recordNumber = (await recordLink.textContent())?.trim() || '';
-      } else {
-        recordNumber = cellTexts[0];
+      const recordLink = await row.$('a[href*="Cap"], a[onclick]');
+      let recordNumber = recordLink ? (await recordLink.textContent())?.trim() || '' : cellTexts[0];
+
+      if (!recordNumber || recordNumber.toLowerCase().includes('record') || recordNumber.toLowerCase().includes('number')) {
+        continue;
       }
 
-      // Skip header rows
-      if (recordNumber && !recordNumber.toLowerCase().includes('record') && !recordNumber.toLowerCase().includes('number')) {
-        permits.push({
-          'Record Number': recordNumber,
-          'Record Type': cellTexts[1] || '',
-          'Project Name': cellTexts[2] || '',
-          'Address': cellTexts[3] || '',
-          'Status': cellTexts[4] || '',
-          'Date': cellTexts[5] || '',
-          'Description': cellTexts[2] || '',
-        });
-      }
+      permits.push({
+        'Record Number': recordNumber,
+        'Record Type': cellTexts[1] || '',
+        'Project Name': cellTexts[2] || '',
+        'Address': cellTexts[3] || '',
+        'Status': cellTexts[4] || '',
+        'Date': cellTexts[5] || '',
+        'Description': cellTexts[2] || '',
+      });
     }
   } catch (error) {
     console.error(`[${JURISDICTION}] Error extracting permits:`, error);
@@ -353,9 +320,28 @@ async function extractPermitsFromPage(page: Page): Promise<AACoPermit[]> {
   return permits;
 }
 
-function transformAACoPermit(
-  raw: AACoPermit
-): Omit<Permit, 'id' | 'created_at' | 'updated_at'> | null {
+async function extractPermitDetails(page: Page): Promise<{ applicantName?: string; description?: string }> {
+  const details: { applicantName?: string; description?: string } = {};
+
+  try {
+    const applicantElement = await page.$('span[id*="Applicant"], span[id*="ContactName"], td:has-text("Applicant") + td');
+    if (applicantElement) {
+      details.applicantName = (await applicantElement.textContent())?.trim();
+    }
+
+    const descElement = await page.$('span[id*="Description"], span[id*="WorkDesc"], td:has-text("Description") + td, td:has-text("Scope") + td');
+    if (descElement) {
+      const text = (await descElement.textContent())?.trim();
+      if (text && text.length > 5) details.description = text;
+    }
+  } catch (error) {
+    console.error(`[${JURISDICTION}] Error extracting details:`, error);
+  }
+
+  return details;
+}
+
+function transformPermit(raw: AACoPermit): Omit<Permit, 'id' | 'created_at' | 'updated_at'> | null {
   if (!raw['Record Number']) return null;
 
   const description = raw['Description'] || raw['Project Name'] || raw['Record Type'] || '';
@@ -371,7 +357,7 @@ function transformAACoPermit(
     state: 'MD',
     zip_code: addressParts.zip,
     project_type: projectType,
-    permit_type: raw['Record Type'],
+    permit_type: raw['Record Type'] || RECORD_TYPE_TO_SELECT,
     status: raw['Status'] || 'Unknown',
     applicant_name: raw['Applicant Name'],
     submission_date: parseDate(raw['Date']),
@@ -384,40 +370,31 @@ function transformAACoPermit(
 }
 
 function parseAddress(address: string): { street: string; city?: string; zip?: string } {
-  const parts = address.split(',').map((p) => p.trim());
-
+  const parts = address.split(',').map(p => p.trim());
   if (parts.length >= 2) {
     const lastPart = parts[parts.length - 1];
     const zipMatch = lastPart.match(/\d{5}/);
-
     return {
       street: parts[0],
       city: parts.length > 2 ? parts[1] : undefined,
       zip: zipMatch ? zipMatch[0] : undefined,
     };
   }
-
   return { street: address };
 }
 
 function parseDate(dateStr: string): string | undefined {
   if (!dateStr) return undefined;
-
   try {
     const date = new Date(dateStr);
-    if (!isNaN(date.getTime())) {
-      return date.toISOString();
-    }
-  } catch {
-    // Ignore parsing errors
-  }
-
+    if (!isNaN(date.getTime())) return date.toISOString();
+  } catch { /* ignore */ }
   return undefined;
 }
 
 function formatDate(date: Date): string {
-  return `${(date.getMonth() + 1).toString().padStart(2, '0')}/${date
-    .getDate()
-    .toString()
-    .padStart(2, '0')}/${date.getFullYear()}`;
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  const year = date.getFullYear();
+  return `${month}/${day}/${year}`;
 }
