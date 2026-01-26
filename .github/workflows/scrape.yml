@@ -1,0 +1,69 @@
+name: Scrape Permits
+
+on:
+  schedule:
+    # Run daily at 6 AM UTC (1 AM EST)
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      jurisdiction:
+        description: 'Jurisdiction to scrape (leave empty for all)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - howard_county_md
+          - baltimore_county_md
+          - anne_arundel_county_md
+          - dc
+      run_scoring:
+        description: 'Run AI scoring after scraping'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: scraper/package-lock.json
+
+      - name: Install dependencies
+        working-directory: scraper
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: scraper
+        run: npx playwright install chromium --with-deps
+
+      - name: Run scraper
+        working-directory: scraper
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -n "${{ github.event.inputs.jurisdiction }}" ]; then
+            npm run scrape -- --jurisdiction=${{ github.event.inputs.jurisdiction }}
+          else
+            npm run scrape
+          fi
+
+      - name: Run AI scoring
+        if: ${{ github.event.inputs.run_scoring != 'false' }}
+        working-directory: scraper
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: npm run scrape -- --score-only

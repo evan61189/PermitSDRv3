@@ -1,0 +1,26 @@
+{
+  "name": "@permit-sdr/scraper",
+  "version": "1.0.0",
+  "description": "Playwright scrapers for permit data",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "scrape": "npx tsx src/index.ts",
+    "scrape:howard": "npx tsx src/index.ts --jurisdiction howard_county_md",
+    "scrape:baltimore": "npx tsx src/index.ts --jurisdiction baltimore_county_md",
+    "scrape:aaco": "npx tsx src/index.ts --jurisdiction anne_arundel_county_md",
+    "scrape:dc": "npx tsx src/index.ts --jurisdiction dc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "openai": "^4.24.0",
+    "playwright": "^1.40.0",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}
