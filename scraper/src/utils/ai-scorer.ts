@@ -1,11 +1,27 @@
-import OpenAI from 'openai';
-import type { Permit, AIScore, OpportunityRating, ProjectType } from '../types/index.js';
+import Anthropic from '@anthropic-ai/sdk';
+import type { Permit, AIScore, OpportunityRating } from '../types/index.js';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const SCORING_PROMPT = `You are an AI assistant that scores construction permit opportunities for a sales development team.
+const SCORING_PROMPT = `You are an AI assistant that scores construction permit opportunities for Clipper Construction, a commercial general contractor in the Maryland/DC area.
+
+Clipper Construction specializes in:
+- Commercial tenant improvements and fit-outs
+- Office renovations and buildouts
+- Retail construction and renovations
+- Medical/dental office buildouts
+- Restaurant and hospitality construction
+- Multi-family residential construction
+- Ground-up commercial construction
+
+They are NOT interested in:
+- Single-family residential projects
+- Single trade work (electrical only, plumbing only, HVAC only)
+- Fire alarm/sprinkler-only permits
+- Roofing-only projects
+- Minor repairs and maintenance
 
 Analyze the following permit and provide a scoring assessment:
 
@@ -24,26 +40,33 @@ Permit Details:
 
 Score this opportunity on the following criteria (0-100 for each):
 
-1. PROJECT_SIZE_SCORE: Based on estimated value and square footage. Larger commercial projects score higher.
-2. TIMING_SCORE: Based on permit status. Active/recent permits score higher than old or completed ones.
-3. LOCATION_SCORE: Based on the desirability of the location for business development.
-4. COMPETITION_SCORE: Estimate how competitive this opportunity might be (inverse - less competition = higher score).
+1. PROJECT_SIZE_SCORE: Based on estimated value, square footage, and scope. Larger commercial projects (tenant buildouts, renovations, new construction) score higher. Small projects under $50K score low.
+
+2. TIMING_SCORE: Based on permit status. "Submitted", "In Review", "Approved" permits that haven't started are ideal (80-100). "Issued" permits may still have opportunities. "Complete" or "Expired" score low.
+
+3. LOCATION_SCORE: Based on the location within the DC/MD market. Urban commercial areas, business districts, and established commercial corridors score higher.
+
+4. FIT_SCORE: How well this project fits Clipper Construction's expertise. Commercial buildouts, tenant improvements, and renovations score highest. Single-trade or residential score lowest.
 
 Also provide:
-- OVERALL_SCORE: Weighted average (0-100)
-- OPPORTUNITY_RATING: One of "hot", "warm", "cold", or "not_relevant"
-- REASONING: Brief explanation of the scores
-- KEYWORDS: Key terms that influenced scoring
-- RECOMMENDED_ACTIONS: Suggested next steps for sales team
+- OVERALL_SCORE: Weighted average favoring FIT_SCORE and PROJECT_SIZE_SCORE (0-100)
+- OPPORTUNITY_RATING:
+  - "hot" = Overall 75+, good fit, actionable timing
+  - "warm" = Overall 50-74, decent fit or timing not ideal
+  - "cold" = Overall 25-49, marginal opportunity
+  - "not_relevant" = Overall <25, not a fit for Clipper
+- REASONING: 2-3 sentence explanation of why this is or isn't a good opportunity for Clipper Construction
+- KEYWORDS: Key terms from the permit that influenced scoring
+- RECOMMENDED_ACTIONS: Specific next steps (e.g., "Contact applicant", "Monitor for GC selection", "Request bid documents")
 
-Respond in JSON format:
+Respond ONLY with valid JSON in this exact format:
 {
   "overall_score": number,
   "opportunity_rating": "hot" | "warm" | "cold" | "not_relevant",
   "project_size_score": number,
   "timing_score": number,
   "location_score": number,
-  "competition_score": number,
+  "fit_score": number,
   "reasoning": "string",
   "keywords_detected": ["string"],
   "recommended_actions": ["string"]
@@ -65,29 +88,37 @@ export async function scorePermit(permit: Permit): Promise<Omit<AIScore, 'id'>> 
     .replace('{square_footage}', permit.square_footage?.toString() || 'N/A');
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1024,
       messages: [
-        {
-          role: 'system',
-          content: 'You are a construction industry sales intelligence assistant. Respond only with valid JSON.',
-        },
         {
           role: 'user',
           content: prompt,
         },
       ],
-      response_format: { type: 'json_object' },
-      temperature: 0.3,
     });
 
-    const response = completion.choices[0]?.message?.content;
-    if (!response) {
-      throw new Error('No response from OpenAI');
+    const responseText = message.content[0];
+    if (responseText.type !== 'text') {
+      throw new Error('Unexpected response type from Anthropic');
     }
 
-    const parsed = JSON.parse(response);
+    // Extract JSON from response (handle potential markdown code blocks)
+    let jsonStr = responseText.text.trim();
+    if (jsonStr.startsWith('```json')) {
+      jsonStr = jsonStr.slice(7);
+    } else if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.slice(3);
+    }
+    if (jsonStr.endsWith('```')) {
+      jsonStr = jsonStr.slice(0, -3);
+    }
+    jsonStr = jsonStr.trim();
 
+    const parsed = JSON.parse(jsonStr);
+
+    // Map fit_score to competition_score for backward compatibility with DB schema
     return {
       permit_id: permit.id,
       overall_score: Math.min(100, Math.max(0, parsed.overall_score)),
@@ -95,7 +126,7 @@ export async function scorePermit(permit: Permit): Promise<Omit<AIScore, 'id'>> 
       project_size_score: Math.min(100, Math.max(0, parsed.project_size_score)),
       timing_score: Math.min(100, Math.max(0, parsed.timing_score)),
       location_score: Math.min(100, Math.max(0, parsed.location_score)),
-      competition_score: Math.min(100, Math.max(0, parsed.competition_score)),
+      competition_score: Math.min(100, Math.max(0, parsed.fit_score || parsed.competition_score || 0)),
       reasoning: parsed.reasoning || '',
       keywords_detected: parsed.keywords_detected || [],
       recommended_actions: parsed.recommended_actions || [],
@@ -112,7 +143,7 @@ export async function scorePermit(permit: Permit): Promise<Omit<AIScore, 'id'>> 
       timing_score: 0,
       location_score: 0,
       competition_score: 0,
-      reasoning: 'Error during AI scoring',
+      reasoning: 'Error during AI scoring: ' + (error instanceof Error ? error.message : 'Unknown error'),
       keywords_detected: [],
       recommended_actions: [],
       scored_at: new Date().toISOString(),
@@ -127,45 +158,5 @@ function validateRating(rating: string): OpportunityRating {
     : 'not_relevant';
 }
 
-export function classifyProjectType(description: string, permitType: string): ProjectType {
-  const text = `${description} ${permitType}`.toLowerCase();
-
-  // Commercial indicators
-  const commercialKeywords = ['commercial', 'office', 'retail', 'store', 'restaurant', 'hotel', 'warehouse', 'business'];
-  const isCommercial = commercialKeywords.some(kw => text.includes(kw));
-
-  // Residential indicators
-  const residentialKeywords = ['residential', 'single family', 'multi-family', 'apartment', 'condo', 'townhouse', 'dwelling', 'home'];
-  const isResidential = residentialKeywords.some(kw => text.includes(kw));
-
-  // New construction indicators
-  const newConstructionKeywords = ['new construction', 'new building', 'new structure', 'construct new'];
-  const isNew = newConstructionKeywords.some(kw => text.includes(kw));
-
-  // Renovation indicators
-  const renovationKeywords = ['renovation', 'remodel', 'alteration', 'addition', 'interior fit', 'tenant improvement'];
-  const isRenovation = renovationKeywords.some(kw => text.includes(kw));
-
-  // Specific trade indicators
-  if (text.includes('electrical') || text.includes('electric')) return 'electrical';
-  if (text.includes('plumbing') || text.includes('water heater')) return 'plumbing';
-  if (text.includes('hvac') || text.includes('mechanical') || text.includes('heating') || text.includes('cooling')) return 'hvac';
-  if (text.includes('roof') || text.includes('shingle')) return 'roofing';
-  if (text.includes('demolition') || text.includes('demo') || text.includes('raze')) return 'demolition';
-  if (text.includes('industrial') || text.includes('manufacturing') || text.includes('factory')) return 'industrial';
-  if (text.includes('mixed use') || text.includes('mixed-use')) return 'mixed_use';
-
-  // Combined classifications
-  if (isCommercial && isNew) return 'commercial_new';
-  if (isCommercial && isRenovation) return 'commercial_renovation';
-  if (isCommercial) return 'commercial_renovation'; // Default commercial to renovation
-
-  if (isResidential && isNew) return 'residential_new';
-  if (isResidential && isRenovation) return 'residential_renovation';
-  if (isResidential) return 'residential_renovation'; // Default residential to renovation
-
-  if (isNew) return 'commercial_new';
-  if (isRenovation) return 'commercial_renovation';
-
-  return 'other';
-}
+// Re-export from permit-filter for backward compatibility
+export { classifyProjectType } from './permit-filter.js';

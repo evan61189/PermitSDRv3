@@ -1,7 +1,7 @@
 {
   "name": "permit-sdr-v3",
   "version": "1.0.0",
-  "description": "Permit SDR Platform with AI-powered opportunity scoring",
+  "description": "Permit SDR Platform for Clipper Construction with AI-powered opportunity scoring",
   "private": true,
   "workspaces": [
     "scraper",
@@ -11,7 +11,8 @@
   "scripts": {
     "scrape": "npm run scrape --workspace=scraper",
     "scrape:howard": "npm run scrape:howard --workspace=scraper",
-    "scrape:baltimore": "npm run scrape:baltimore --workspace=scraper",
+    "scrape:baltimore-county": "npm run scrape:baltimore-county --workspace=scraper",
+    "scrape:baltimore-city": "npm run scrape:baltimore-city --workspace=scraper",
     "scrape:aaco": "npm run scrape:aaco --workspace=scraper",
     "scrape:dc": "npm run scrape:dc --workspace=scraper",
     "dev": "npm run dev --workspace=dashboard",

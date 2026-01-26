@@ -1,6 +1,6 @@
 import { Page } from 'playwright';
 import { getPage } from '../utils/browser.js';
-import { classifyProjectType } from '../utils/ai-scorer.js';
+import { classifyProjectType, isRelevantForClipperConstruction } from '../utils/permit-filter.js';
 import type { Permit, ScraperResult, Jurisdiction } from '../types/index.js';
 
 const JURISDICTION: Jurisdiction = 'dc';
@@ -113,17 +113,22 @@ export async function scrapeDC(): Promise<ScraperResult> {
       currentPage++;
     }
 
-    // Transform to standard format
+    // Transform to standard format and filter for relevance
+    let skippedCount = 0;
     for (const raw of rawPermits) {
       const permit = transformDCPermit(raw);
       if (permit) {
-        permits.push(permit);
+        if (isRelevantForClipperConstruction(permit.description, permit.permit_type, permit.project_type)) {
+          permits.push(permit);
+        } else {
+          skippedCount++;
+        }
       }
     }
 
     await context.close();
 
-    console.log(`[${JURISDICTION}] Scrape complete. Total permits: ${permits.length}`);
+    console.log(`[${JURISDICTION}] Scrape complete. Relevant permits: ${permits.length}, Skipped: ${skippedCount}`);
 
     return {
       jurisdiction: JURISDICTION,

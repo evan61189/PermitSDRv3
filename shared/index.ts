@@ -1,4 +1,4 @@
-// Shared types for Permit SDR Platform
+// Shared types for Permit SDR Platform - Clipper Construction
 
 export interface Permit {
   id: string;
@@ -38,7 +38,7 @@ export interface AIScore {
   project_size_score: number;
   timing_score: number;
   location_score: number;
-  competition_score: number;
+  competition_score: number; // Also used as "fit_score" for Clipper relevance
   reasoning: string;
   keywords_detected: string[];
   recommended_actions: string[];
@@ -64,12 +64,14 @@ export type ProjectType =
 export type Jurisdiction =
   | 'howard_county_md'
   | 'baltimore_county_md'
+  | 'baltimore_city_md'
   | 'anne_arundel_county_md'
   | 'dc';
 
 export const JURISDICTION_NAMES: Record<Jurisdiction, string> = {
   howard_county_md: 'Howard County, MD',
   baltimore_county_md: 'Baltimore County, MD',
+  baltimore_city_md: 'Baltimore City, MD',
   anne_arundel_county_md: 'Anne Arundel County, MD',
   dc: 'Washington, DC',
 };

@@ -1,10 +1,12 @@
 export { scrapeHowardCounty } from './howard-county.js';
 export { scrapeBaltimoreCounty } from './baltimore-county.js';
+export { scrapeBaltimoreCityMD } from './baltimore-city.js';
 export { scrapeAnneArundelCounty } from './anne-arundel-county.js';
 export { scrapeDC } from './dc.js';
 
 import { scrapeHowardCounty } from './howard-county.js';
 import { scrapeBaltimoreCounty } from './baltimore-county.js';
+import { scrapeBaltimoreCityMD } from './baltimore-city.js';
 import { scrapeAnneArundelCounty } from './anne-arundel-county.js';
 import { scrapeDC } from './dc.js';
 import type { Jurisdiction, ScraperResult } from '../types/index.js';
@@ -14,6 +16,7 @@ export type ScraperFunction = () => Promise<ScraperResult>;
 export const scrapers: Record<Jurisdiction, ScraperFunction> = {
   howard_county_md: scrapeHowardCounty,
   baltimore_county_md: scrapeBaltimoreCounty,
+  baltimore_city_md: scrapeBaltimoreCityMD,
   anne_arundel_county_md: scrapeAnneArundelCounty,
   dc: scrapeDC,
 };
@@ -31,7 +34,7 @@ export async function scrapeAll(): Promise<ScraperResult[]> {
       results.push(result);
 
       if (result.success) {
-        console.log(`✓ ${jurisdiction}: ${result.permits.length} permits scraped`);
+        console.log(`✓ ${jurisdiction}: ${result.permits.length} relevant permits scraped`);
       } else {
         console.log(`✗ ${jurisdiction}: Failed - ${result.error}`);
       }

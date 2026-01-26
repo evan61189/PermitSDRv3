@@ -14,6 +14,7 @@ on:
           - ''
           - howard_county_md
           - baltimore_county_md
+          - baltimore_city_md
           - anne_arundel_county_md
           - dc
       run_scoring:
@@ -51,7 +52,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           if [ -n "${{ github.event.inputs.jurisdiction }}" ]; then
             npm run scrape -- --jurisdiction=${{ github.event.inputs.jurisdiction }}
@@ -65,5 +66,5 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: npm run scrape -- --score-only

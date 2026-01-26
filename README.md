@@ -1,17 +1,36 @@
-# Permit SDR v3
+# Permit SDR v3 - Clipper Construction
 
-AI-powered permit tracking and sales development platform for construction opportunities in the DC/Maryland area.
+AI-powered permit tracking and sales development platform for commercial construction opportunities in the DC/Maryland area, built for Clipper Construction.
 
 ## Overview
 
-This platform automatically scrapes permit data from multiple jurisdictions, scores opportunities using AI, and presents them through an intuitive dashboard for sales development teams.
+This platform automatically scrapes permit data from multiple jurisdictions, filters for commercial construction opportunities relevant to general contractors, scores opportunities using Claude AI, and presents them through an intuitive dashboard.
 
 ### Jurisdictions Supported
 
 - **Howard County, MD** - Building permits from DILP Citizen Access
 - **Baltimore County, MD** - Permits from Citizen Access portal
+- **Baltimore City, MD** - Building permits from Accela portal
 - **Anne Arundel County, MD** - Permits from Accela portal
 - **Washington, DC** - Permits from DC Citizen Access
+
+### Filtering Logic
+
+The system automatically filters out permits that are NOT relevant for Clipper Construction:
+- Single-family residential projects
+- Single trade permits (electrical only, plumbing only, HVAC only)
+- Fire alarm/sprinkler-only permits
+- Roofing-only projects
+- Minor repairs and maintenance
+
+It focuses on:
+- Commercial tenant improvements and fit-outs
+- Office renovations and buildouts
+- Retail construction
+- Medical/dental office buildouts
+- Restaurant and hospitality construction
+- Multi-family residential
+- Ground-up commercial construction
 
 ## Architecture
 
@@ -23,7 +42,7 @@ This platform automatically scrapes permit data from multiple jurisdictions, sco
         │                       │
         v                       v
 ┌─────────────────┐     ┌─────────────────┐
-│  GitHub Actions │     │   OpenAI API    │
+│  GitHub Actions │     │  Anthropic API  │
 │  (Scheduled)    │     │  (AI Scoring)   │
 └─────────────────┘     └─────────────────┘
 ```
@@ -35,7 +54,7 @@ permit-sdr-v3/
 ├── scraper/                 # Playwright scrapers
 │   ├── src/
 │   │   ├── scrapers/        # Individual jurisdiction scrapers
-│   │   ├── utils/           # Browser, DB, AI utilities
+│   │   ├── utils/           # Browser, DB, AI, filtering utilities
 │   │   └── types/           # TypeScript types
 │   └── package.json
 ├── dashboard/               # React dashboard (Vite + Tailwind)
@@ -59,7 +78,7 @@ permit-sdr-v3/
 - Node.js 20+
 - npm
 - Supabase account
-- OpenAI API key
+- Anthropic API key
 - Netlify account (for dashboard deployment)
 
 ### 1. Clone and Install
@@ -82,7 +101,7 @@ npm install
 ```env
 SUPABASE_URL=your_supabase_url
 SUPABASE_SERVICE_KEY=your_supabase_service_role_key
-OPENAI_API_KEY=your_openai_api_key
+ANTHROPIC_API_KEY=your_anthropic_api_key
 ```
 
 **Dashboard** (`dashboard/.env`):
@@ -98,7 +117,7 @@ Add these secrets to your GitHub repository:
 - `SUPABASE_SERVICE_KEY`
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
-- `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
 - `NETLIFY_AUTH_TOKEN`
 - `NETLIFY_SITE_ID`
 
@@ -112,7 +131,8 @@ npm run scrape
 
 # Run specific jurisdiction
 npm run scrape:howard
-npm run scrape:baltimore
+npm run scrape:baltimore-county
+npm run scrape:baltimore-city
 npm run scrape:aaco
 npm run scrape:dc
 
@@ -137,33 +157,36 @@ npm run build
 
 ### Scraper
 - Automated Playwright-based scraping
+- Smart filtering for commercial construction opportunities
 - Handles pagination and dynamic content
 - Stores raw data for debugging
 - Duplicate detection via permit number
 
-### AI Scoring
-- GPT-4 powered opportunity analysis
+### AI Scoring (Claude)
+- Anthropic Claude-powered opportunity analysis
+- Customized for Clipper Construction's business
 - Scores on multiple dimensions:
-  - Project size
-  - Timing relevance
-  - Location desirability
-  - Competition level
-- Provides actionable recommendations
+  - Project size and scope
+  - Timing (permit status)
+  - Location quality
+  - Fit score (relevance to Clipper's expertise)
+- Provides actionable recommendations for SDR follow-up
 
 ### Dashboard
 - Real-time permit data
 - Filter by jurisdiction, project type, rating
 - Full-text search
 - Score breakdowns and AI insights
+- Recommended actions for each opportunity
 - Responsive design
 
 ## GitHub Actions
 
 ### Scrape Workflow (`scrape.yml`)
-- Runs daily at 6 AM UTC
+- Runs daily at 6 AM UTC (1 AM EST)
 - Can be triggered manually
 - Supports single jurisdiction runs
-- Optional AI scoring
+- Optional AI scoring after scraping
 
 ### Deploy Workflow (`deploy.yml`)
 - Deploys on push to main
@@ -176,13 +199,6 @@ The dashboard uses these Supabase views:
 - `permits_with_scores` - Permits joined with AI scores
 - `dashboard_stats` - Aggregated statistics
 
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make changes
-4. Submit a pull request
-
 ## License
 
-Private - All rights reserved
+Private - All rights reserved - Clipper Construction

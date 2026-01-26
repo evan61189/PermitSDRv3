@@ -8,6 +8,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TYPE jurisdiction AS ENUM (
   'howard_county_md',
   'baltimore_county_md',
+  'baltimore_city_md',
   'anne_arundel_county_md',
   'dc'
 );

@@ -3,20 +3,21 @@ import { getPage } from '../utils/browser.js';
 import { classifyProjectType, isRelevantForClipperConstruction } from '../utils/permit-filter.js';
 import type { Permit, ScraperResult, Jurisdiction } from '../types/index.js';
 
-const JURISDICTION: Jurisdiction = 'howard_county_md';
-const BASE_URL = 'https://dilp.howardcountymd.gov/CitizenAccess/Cap/CapHome.aspx?module=Building&TabName=Building';
+const JURISDICTION: Jurisdiction = 'baltimore_city_md';
+const BASE_URL = 'https://aca-prod.accela.com/BALTIMORE/Cap/CapHome.aspx?module=Building&TabName=Building';
 
-interface HowardCountyPermit {
+interface BaltimoreCityPermit {
   'Record Number': string;
   'Record Type': string;
-  'Description': string;
+  'Project Name': string;
   'Address': string;
   'Status': string;
   'Date': string;
-  'Applicant Name'?: string;
+  'Description'?: string;
+  'Work Type'?: string;
 }
 
-export async function scrapeHowardCounty(): Promise<ScraperResult> {
+export async function scrapeBaltimoreCityMD(): Promise<ScraperResult> {
   console.log(`[${JURISDICTION}] Starting scrape...`);
   const permits: Omit<Permit, 'id' | 'created_at' | 'updated_at'>[] = [];
 
@@ -28,70 +29,75 @@ export async function scrapeHowardCounty(): Promise<ScraperResult> {
 
     console.log(`[${JURISDICTION}] Navigating to ${BASE_URL}`);
     await page.goto(BASE_URL, { waitUntil: 'networkidle' });
-
-    // Wait for the page to fully load
     await page.waitForTimeout(3000);
 
-    // Check for and accept any disclaimer/terms
-    const disclaimerButton = await page.$('input[id*="Disclaimer"], button:has-text("I Accept"), a:has-text("I Accept")');
-    if (disclaimerButton) {
+    // Handle any disclaimer popup
+    const disclaimerAccept = await page.$('input[id*="btnDisclaimerAccept"], a:has-text("I Accept"), button:has-text("Accept")');
+    if (disclaimerAccept) {
       console.log(`[${JURISDICTION}] Accepting disclaimer...`);
-      await disclaimerButton.click();
+      await disclaimerAccept.click();
       await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
     }
 
-    // Set date range to last 30 days
+    // Set date range for last 30 days
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - 30);
 
-    // Try to find and fill date inputs
+    // Find and fill date fields
     const startDateInput = await page.$('input[id*="txtGSStartDate"], input[id*="StartDate"]');
-    const endDateInput = await page.$('input[id*="txtGSEndDate"], input[id*="EndDate"]');
-
     if (startDateInput) {
       await startDateInput.fill(formatDate(startDate));
     }
+
+    const endDateInput = await page.$('input[id*="txtGSEndDate"], input[id*="EndDate"]');
     if (endDateInput) {
       await endDateInput.fill(formatDate(endDate));
     }
 
-    // Click search button
-    const searchButton = await page.$('a[id*="btnSearch"], input[id*="btnSearch"], button:has-text("Search")');
+    // Execute search
+    const searchButton = await page.$('a[id*="btnNewSearch"], input[id*="btnSearch"], a:has-text("Search")');
     if (searchButton) {
-      console.log(`[${JURISDICTION}] Clicking search...`);
+      console.log(`[${JURISDICTION}] Executing search...`);
       await searchButton.click();
       await page.waitForLoadState('networkidle');
       await page.waitForTimeout(3000);
     }
 
-    // Extract permit data from the results table
+    // Extract permits from results
     const rawPermits = await extractPermitsFromPage(page);
-    console.log(`[${JURISDICTION}] Found ${rawPermits.length} permits on page`);
+    console.log(`[${JURISDICTION}] Found ${rawPermits.length} permits on page 1`);
 
-    // Check for pagination and scrape additional pages
+    // Handle pagination
     let currentPage = 1;
     const maxPages = 10;
 
     while (currentPage < maxPages) {
-      const nextPageLink = await page.$(`a[href*="Page$${currentPage + 1}"], a:has-text("${currentPage + 1}")`);
-      if (!nextPageLink) break;
+      const nextLink = await page.$('a[id*="_lnkBtnNext"], a:has-text("Next >"), a.aca_pagination_PrevNext:has-text("Next")');
+      if (!nextLink) break;
+
+      const nextClass = await nextLink.getAttribute('class');
+      if (nextClass?.includes('aspNetDisabled') || nextClass?.includes('disabled')) break;
 
       console.log(`[${JURISDICTION}] Going to page ${currentPage + 1}...`);
-      await nextPageLink.click();
+      await nextLink.click();
       await page.waitForLoadState('networkidle');
       await page.waitForTimeout(2000);
 
       const pagePermits = await extractPermitsFromPage(page);
+      if (pagePermits.length === 0) break;
+
       rawPermits.push(...pagePermits);
       currentPage++;
     }
 
-    // Transform raw data to our permit format and filter for relevance
+    // Transform to standard format and filter for relevant opportunities
     let skippedCount = 0;
     for (const raw of rawPermits) {
-      const permit = transformHowardCountyPermit(raw);
+      const permit = transformBaltimoreCityPermit(raw);
       if (permit) {
+        // Filter for Clipper Construction relevance
         if (isRelevantForClipperConstruction(permit.description, permit.permit_type, permit.project_type)) {
           permits.push(permit);
         } else {
@@ -122,15 +128,18 @@ export async function scrapeHowardCounty(): Promise<ScraperResult> {
   }
 }
 
-async function extractPermitsFromPage(page: Page): Promise<HowardCountyPermit[]> {
-  const permits: HowardCountyPermit[] = [];
+async function extractPermitsFromPage(page: Page): Promise<BaltimoreCityPermit[]> {
+  const permits: BaltimoreCityPermit[] = [];
 
   try {
-    // Wait for table to be visible
-    await page.waitForSelector('table[id*="GridView"], table.ACA_Grid, div.ACA_Grid', { timeout: 10000 });
+    await page.waitForSelector(
+      'table[id*="GlobalSearchResult"], table.ACA_Grid, div[id*="divGlobalSearchResult"]',
+      { timeout: 10000 }
+    );
 
-    // Extract data from table rows
-    const rows = await page.$$('table[id*="GridView"] tr:not(:first-child), table.ACA_Grid tr:not(:first-child)');
+    const rows = await page.$$(
+      'table[id*="GlobalSearchResult"] tbody tr, div[id*="divGlobalSearchResult"] table tbody tr'
+    );
 
     for (const row of rows) {
       const cells = await row.$$('td');
@@ -143,24 +152,25 @@ async function extractPermitsFromPage(page: Page): Promise<HowardCountyPermit[]>
         })
       );
 
-      // Try to extract link for record number
-      const recordLink = await row.$('a[href*="Cap/CapDetail"]');
+      // Try to get record number from link
+      const recordLink = await row.$('a[href*="Cap/CapDetail"], a[id*="lnkPermitNumber"]');
       let recordNumber = '';
       if (recordLink) {
         recordNumber = (await recordLink.textContent())?.trim() || '';
-      } else if (cellTexts[0]) {
+      } else {
         recordNumber = cellTexts[0];
       }
 
-      if (recordNumber) {
+      // Skip header rows
+      if (recordNumber && !recordNumber.toLowerCase().includes('record') && !recordNumber.toLowerCase().includes('number')) {
         permits.push({
           'Record Number': recordNumber,
           'Record Type': cellTexts[1] || '',
-          'Description': cellTexts[2] || '',
+          'Project Name': cellTexts[2] || '',
           'Address': cellTexts[3] || '',
           'Status': cellTexts[4] || '',
           'Date': cellTexts[5] || '',
-          'Applicant Name': cellTexts[6] || undefined,
+          'Description': cellTexts[2] || '',
         });
       }
     }
@@ -171,29 +181,26 @@ async function extractPermitsFromPage(page: Page): Promise<HowardCountyPermit[]>
   return permits;
 }
 
-function transformHowardCountyPermit(
-  raw: HowardCountyPermit
+function transformBaltimoreCityPermit(
+  raw: BaltimoreCityPermit
 ): Omit<Permit, 'id' | 'created_at' | 'updated_at'> | null {
   if (!raw['Record Number']) return null;
 
-  const description = raw['Description'] || raw['Record Type'] || '';
+  const description = raw['Description'] || raw['Project Name'] || raw['Record Type'] || '';
   const projectType = classifyProjectType(description, raw['Record Type']);
-
-  // Parse address components
   const addressParts = parseAddress(raw['Address'] || '');
 
   return {
     permit_number: raw['Record Number'],
     description,
     address: addressParts.street,
-    city: addressParts.city || 'Columbia',
-    county: 'Howard County',
+    city: 'Baltimore',
+    county: 'Baltimore City',
     state: 'MD',
     zip_code: addressParts.zip,
     project_type: projectType,
     permit_type: raw['Record Type'],
     status: raw['Status'] || 'Unknown',
-    applicant_name: raw['Applicant Name'],
     submission_date: parseDate(raw['Date']),
     source_url: BASE_URL,
     source_jurisdiction: JURISDICTION,
@@ -202,7 +209,6 @@ function transformHowardCountyPermit(
 }
 
 function parseAddress(address: string): { street: string; city?: string; zip?: string } {
-  // Basic address parsing - can be enhanced
   const parts = address.split(',').map((p) => p.trim());
 
   if (parts.length >= 2) {
@@ -211,7 +217,7 @@ function parseAddress(address: string): { street: string; city?: string; zip?: s
 
     return {
       street: parts[0],
-      city: parts.length > 2 ? parts[1] : undefined,
+      city: parts.length > 2 ? parts[1] : 'Baltimore',
       zip: zipMatch ? zipMatch[0] : undefined,
     };
   }
