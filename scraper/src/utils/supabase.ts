@@ -31,10 +31,22 @@ export async function upsertPermit(permit: Omit<Permit, 'id' | 'created_at' | 'u
 export async function upsertPermits(permits: Omit<Permit, 'id' | 'created_at' | 'updated_at'>[]): Promise<Permit[]> {
   if (permits.length === 0) return [];
 
+  // Deduplicate permits by permit_number + source_jurisdiction to avoid
+  // "ON CONFLICT DO UPDATE command cannot affect row a second time" error
+  const uniquePermits = new Map<string, Omit<Permit, 'id' | 'created_at' | 'updated_at'>>();
+  for (const permit of permits) {
+    const key = `${permit.permit_number}::${permit.source_jurisdiction}`;
+    // Keep the last occurrence (which may have more complete data)
+    uniquePermits.set(key, permit);
+  }
+
+  const deduplicatedPermits = Array.from(uniquePermits.values());
+  console.log(`[supabase] Upserting ${deduplicatedPermits.length} permits (${permits.length - deduplicatedPermits.length} duplicates removed)`);
+
   const { data, error } = await supabase
     .from('permits')
     .upsert(
-      permits.map((p) => ({
+      deduplicatedPermits.map((p) => ({
         ...p,
         updated_at: new Date().toISOString(),
       })),
