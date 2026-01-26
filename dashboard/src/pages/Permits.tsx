@@ -217,9 +217,9 @@ export default function Permits() {
               </div>
               <p className="text-gray-600 mb-2 font-medium">No permits in the database yet</p>
               <p className="text-gray-500 text-sm mb-6">
-                Run the scraper to fetch permit data from Howard County, Baltimore County,
+                Run the scraper to fetch commercial permit data from Howard County,
                 <br />
-                Baltimore City, Anne Arundel County, and Washington DC.
+                Baltimore City, and Anne Arundel County.
               </p>
               {scraperMessage && (
                 <p className={`text-sm mb-4 ${scraperStatus === 'success' ? 'text-green-600' : 'text-red-600'}`}>

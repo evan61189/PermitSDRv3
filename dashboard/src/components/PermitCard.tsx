@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { MapPin, Calendar, Building2, ArrowRight } from 'lucide-react';
+import { MapPin, Calendar, Building2, ArrowRight, Image, ExternalLink } from 'lucide-react';
 import { format } from 'date-fns';
 import OpportunityBadge from './OpportunityBadge';
 import type { PermitWithScore } from '../types';
@@ -13,6 +13,22 @@ export default function PermitCard({ permit }: PermitCardProps) {
   const formattedDate = permit.submission_date
     ? format(new Date(permit.submission_date), 'MMM d, yyyy')
     : 'N/A';
+
+  const handleScreenshotClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (permit.screenshot_url) {
+      window.open(permit.screenshot_url, '_blank');
+    }
+  };
+
+  const handleDetailClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (permit.detail_url) {
+      window.open(permit.detail_url, '_blank');
+    }
+  };
 
   return (
     <Link
@@ -65,9 +81,31 @@ export default function PermitCard({ permit }: PermitCardProps) {
         <span className="text-xs text-gray-500">
           {JURISDICTION_NAMES[permit.source_jurisdiction]}
         </span>
-        <span className="text-xs text-gray-500">
-          Status: <span className="font-medium">{permit.status}</span>
-        </span>
+        <div className="flex items-center gap-2">
+          {permit.screenshot_url && (
+            <button
+              onClick={handleScreenshotClick}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded hover:bg-blue-100 transition-colors"
+              title="View permit screenshot"
+            >
+              <Image className="w-3 h-3" />
+              Screenshot
+            </button>
+          )}
+          {permit.detail_url && (
+            <button
+              onClick={handleDetailClick}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-600 bg-green-50 rounded hover:bg-green-100 transition-colors"
+              title="View original permit"
+            >
+              <ExternalLink className="w-3 h-3" />
+              Source
+            </button>
+          )}
+          <span className="text-xs text-gray-500">
+            Status: <span className="font-medium">{permit.status}</span>
+          </span>
+        </div>
       </div>
     </Link>
   );

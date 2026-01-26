@@ -1,10 +1,12 @@
 import { Page } from 'playwright';
 import { getPage } from '../utils/browser.js';
 import { classifyProjectType, isRelevantForClipperConstruction } from '../utils/permit-filter.js';
+import { captureAndUploadScreenshot, waitForPageReady } from '../utils/screenshot.js';
 import type { Permit, ScraperResult, Jurisdiction } from '../types/index.js';
 
 const JURISDICTION: Jurisdiction = 'howard_county_md';
 const BASE_URL = 'https://dilp.howardcountymd.gov/CitizenAccess/Cap/CapHome.aspx?module=Building&TabName=Building';
+const PERMIT_TYPE_TO_SELECT = 'Commercial Alteration Permit';
 
 interface HowardCountyPermit {
   'Record Number': string;
@@ -14,6 +16,8 @@ interface HowardCountyPermit {
   'Status': string;
   'Date': string;
   'Applicant Name'?: string;
+  'Detail URL'?: string;
+  'Screenshot URL'?: string;
 }
 
 export async function scrapeHowardCounty(): Promise<ScraperResult> {
@@ -27,7 +31,7 @@ export async function scrapeHowardCounty(): Promise<ScraperResult> {
     page = browserPage;
 
     console.log(`[${JURISDICTION}] Navigating to ${BASE_URL}`);
-    await page.goto(BASE_URL, { waitUntil: 'networkidle' });
+    await page.goto(BASE_URL, { waitUntil: 'networkidle', timeout: 60000 });
 
     // Wait for the page to fully load
     await page.waitForTimeout(3000);
@@ -38,6 +42,48 @@ export async function scrapeHowardCounty(): Promise<ScraperResult> {
       console.log(`[${JURISDICTION}] Accepting disclaimer...`);
       await disclaimerButton.click();
       await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
+    }
+
+    // Select the permit type from dropdown
+    console.log(`[${JURISDICTION}] Looking for permit type dropdown...`);
+    const permitTypeDropdown = await page.$(
+      'select[id*="PermitType"], select[id*="permitType"], select[id*="ddlPermitType"], select[name*="PermitType"]'
+    );
+
+    if (permitTypeDropdown) {
+      console.log(`[${JURISDICTION}] Found permit type dropdown, selecting "${PERMIT_TYPE_TO_SELECT}"...`);
+
+      // Get all options to find the right one
+      const options = await permitTypeDropdown.$$('option');
+      let found = false;
+
+      for (const option of options) {
+        const text = await option.textContent();
+        if (text && text.toLowerCase().includes('commercial alteration')) {
+          const value = await option.getAttribute('value');
+          if (value) {
+            await permitTypeDropdown.selectOption({ value });
+            found = true;
+            console.log(`[${JURISDICTION}] Selected permit type: ${text}`);
+            break;
+          }
+        }
+      }
+
+      if (!found) {
+        // Try selecting by label
+        try {
+          await permitTypeDropdown.selectOption({ label: PERMIT_TYPE_TO_SELECT });
+          found = true;
+        } catch {
+          console.log(`[${JURISDICTION}] Could not find exact match, trying partial match...`);
+        }
+      }
+
+      await page.waitForTimeout(1000);
+    } else {
+      console.log(`[${JURISDICTION}] No permit type dropdown found, proceeding with search...`);
     }
 
     // Set date range to last 7 days
@@ -87,6 +133,48 @@ export async function scrapeHowardCounty(): Promise<ScraperResult> {
       currentPage++;
     }
 
+    // Now click into each permit to get details and screenshots
+    console.log(`[${JURISDICTION}] Processing ${rawPermits.length} permits for details and screenshots...`);
+
+    for (let i = 0; i < rawPermits.length; i++) {
+      const raw = rawPermits[i];
+
+      try {
+        console.log(`[${JURISDICTION}] Processing permit ${i + 1}/${rawPermits.length}: ${raw['Record Number']}`);
+
+        // Navigate to permit detail page
+        const detailUrl = await navigateToPermitDetail(page, raw['Record Number']);
+        if (detailUrl) {
+          raw['Detail URL'] = detailUrl;
+
+          // Wait for detail page to load
+          await waitForPageReady(page);
+
+          // Extract additional details from detail page
+          const additionalDetails = await extractPermitDetails(page);
+          if (additionalDetails.applicantName) {
+            raw['Applicant Name'] = additionalDetails.applicantName;
+          }
+          if (additionalDetails.description) {
+            raw['Description'] = additionalDetails.description || raw['Description'];
+          }
+
+          // Take screenshot
+          const screenshotUrl = await captureAndUploadScreenshot(page, raw['Record Number'], JURISDICTION);
+          if (screenshotUrl) {
+            raw['Screenshot URL'] = screenshotUrl;
+          }
+
+          // Go back to results
+          await page.goBack();
+          await page.waitForLoadState('networkidle');
+          await page.waitForTimeout(1000);
+        }
+      } catch (error) {
+        console.error(`[${JURISDICTION}] Error processing permit ${raw['Record Number']}:`, error);
+      }
+    }
+
     // Transform raw data to our permit format and filter for relevance
     let skippedCount = 0;
     for (const raw of rawPermits) {
@@ -122,6 +210,89 @@ export async function scrapeHowardCounty(): Promise<ScraperResult> {
   }
 }
 
+async function navigateToPermitDetail(page: Page, recordNumber: string): Promise<string | null> {
+  try {
+    // Find the link for this permit number
+    const permitLink = await page.$(`a:has-text("${recordNumber}")`);
+
+    if (permitLink) {
+      // Check if it's a JavaScript link
+      const href = await permitLink.getAttribute('href');
+      const onclick = await permitLink.getAttribute('onclick');
+
+      if (onclick || (href && href.startsWith('javascript:'))) {
+        // It's a JavaScript link, click it
+        await permitLink.click();
+        await page.waitForLoadState('networkidle');
+        await page.waitForTimeout(2000);
+        return page.url();
+      } else if (href) {
+        // Regular link
+        await permitLink.click();
+        await page.waitForLoadState('networkidle');
+        await page.waitForTimeout(2000);
+        return page.url();
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error(`[${JURISDICTION}] Error navigating to permit detail:`, error);
+    return null;
+  }
+}
+
+async function extractPermitDetails(page: Page): Promise<{ applicantName?: string; description?: string; scopeOfWork?: string }> {
+  const details: { applicantName?: string; description?: string; scopeOfWork?: string } = {};
+
+  try {
+    // Look for applicant information
+    const applicantSelectors = [
+      'span[id*="Applicant"]',
+      'td:has-text("Applicant") + td',
+      'label:has-text("Applicant") + span',
+      'div[id*="applicant"]',
+      '.applicant-name',
+    ];
+
+    for (const selector of applicantSelectors) {
+      const element = await page.$(selector);
+      if (element) {
+        const text = await element.textContent();
+        if (text && text.trim()) {
+          details.applicantName = text.trim();
+          break;
+        }
+      }
+    }
+
+    // Look for description/scope of work
+    const descriptionSelectors = [
+      'span[id*="Description"]',
+      'td:has-text("Description") + td',
+      'td:has-text("Scope of Work") + td',
+      'label:has-text("Work Description") + span',
+      'div[id*="workDescription"]',
+      'textarea[id*="Description"]',
+    ];
+
+    for (const selector of descriptionSelectors) {
+      const element = await page.$(selector);
+      if (element) {
+        const text = await element.textContent();
+        if (text && text.trim() && text.length > 10) {
+          details.description = text.trim();
+          break;
+        }
+      }
+    }
+  } catch (error) {
+    console.error(`[${JURISDICTION}] Error extracting permit details:`, error);
+  }
+
+  return details;
+}
+
 async function extractPermitsFromPage(page: Page): Promise<HowardCountyPermit[]> {
   const permits: HowardCountyPermit[] = [];
 
@@ -144,7 +315,7 @@ async function extractPermitsFromPage(page: Page): Promise<HowardCountyPermit[]>
       );
 
       // Try to extract link for record number
-      const recordLink = await row.$('a[href*="Cap/CapDetail"]');
+      const recordLink = await row.$('a[href*="Cap/CapDetail"], a[onclick]');
       let recordNumber = '';
       if (recordLink) {
         recordNumber = (await recordLink.textContent())?.trim() || '';
@@ -152,7 +323,7 @@ async function extractPermitsFromPage(page: Page): Promise<HowardCountyPermit[]>
         recordNumber = cellTexts[0];
       }
 
-      if (recordNumber) {
+      if (recordNumber && !recordNumber.toLowerCase().includes('record')) {
         permits.push({
           'Record Number': recordNumber,
           'Record Type': cellTexts[1] || '',
@@ -197,6 +368,8 @@ function transformHowardCountyPermit(
     submission_date: parseDate(raw['Date']),
     source_url: BASE_URL,
     source_jurisdiction: JURISDICTION,
+    screenshot_url: raw['Screenshot URL'],
+    detail_url: raw['Detail URL'],
     raw_data: raw as unknown as Record<string, unknown>,
   };
 }
