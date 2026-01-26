@@ -5,7 +5,6 @@ import {
   Calendar,
   Building2,
   User,
-  DollarSign,
   ExternalLink,
   Lightbulb,
 } from 'lucide-react';

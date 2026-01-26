@@ -103,24 +103,21 @@ export function usePermitsByType() {
   return useQuery({
     queryKey: ['permits-by-type'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const res = await supabase
         .from('permits')
-        .select('project_type')
-        .then((res) => {
-          if (res.error) throw res.error;
+        .select('project_type');
 
-          const counts: Record<string, number> = {};
-          for (const row of res.data || []) {
-            counts[row.project_type] = (counts[row.project_type] || 0) + 1;
-          }
+      if (res.error) throw res.error;
 
-          return Object.entries(counts).map(([type, count]) => ({
-            type,
-            count,
-          }));
-        });
+      const counts: Record<string, number> = {};
+      for (const row of res.data || []) {
+        counts[row.project_type] = (counts[row.project_type] || 0) + 1;
+      }
 
-      return data;
+      return Object.entries(counts).map(([type, count]) => ({
+        type,
+        count,
+      }));
     },
   });
 }
@@ -129,24 +126,21 @@ export function usePermitsByJurisdiction() {
   return useQuery({
     queryKey: ['permits-by-jurisdiction'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const res = await supabase
         .from('permits')
-        .select('source_jurisdiction')
-        .then((res) => {
-          if (res.error) throw res.error;
+        .select('source_jurisdiction');
 
-          const counts: Record<string, number> = {};
-          for (const row of res.data || []) {
-            counts[row.source_jurisdiction] = (counts[row.source_jurisdiction] || 0) + 1;
-          }
+      if (res.error) throw res.error;
 
-          return Object.entries(counts).map(([jurisdiction, count]) => ({
-            jurisdiction,
-            count,
-          }));
-        });
+      const counts: Record<string, number> = {};
+      for (const row of res.data || []) {
+        counts[row.source_jurisdiction] = (counts[row.source_jurisdiction] || 0) + 1;
+      }
 
-      return data;
+      return Object.entries(counts).map(([jurisdiction, count]) => ({
+        jurisdiction,
+        count,
+      }));
     },
   });
 }

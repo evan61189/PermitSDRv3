@@ -1,4 +1,4 @@
-import { FileText, Flame, ThermometerSun, Snowflake, TrendingUp } from 'lucide-react';
+import { FileText, Flame, ThermometerSun, Snowflake } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -24,7 +24,7 @@ import { PROJECT_TYPE_NAMES, JURISDICTION_NAMES, type ProjectType, type Jurisdic
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
 export default function Dashboard() {
-  const { data: stats, isLoading: statsLoading } = useDashboardStats();
+  const { data: stats } = useDashboardStats();
   const { data: byType } = usePermitsByType();
   const { data: byJurisdiction } = usePermitsByJurisdiction();
   const { data: hotOpportunities, isLoading: hotLoading } = useHotOpportunities(5);
@@ -113,7 +113,7 @@ export default function Dashboard() {
                   outerRadius={80}
                   paddingAngle={5}
                   dataKey="value"
-                  label={({ name, value }) => `${name}: ${value}`}
+                  label={({ name, value }: { name: string; value: number }) => `${name}: ${value}`}
                 >
                   {jurisdictionChartData.map((_, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
