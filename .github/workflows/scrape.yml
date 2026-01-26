@@ -36,12 +36,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: scraper/package-lock.json
 
       - name: Install dependencies
         working-directory: scraper
-        run: npm ci
+        run: npm install
 
       - name: Install Playwright browsers
         working-directory: scraper
@@ -55,9 +53,9 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           if [ -n "${{ github.event.inputs.jurisdiction }}" ]; then
-            npm run scrape -- --jurisdiction=${{ github.event.inputs.jurisdiction }}
+            npx tsx src/index.ts --jurisdiction=${{ github.event.inputs.jurisdiction }}
           else
-            npm run scrape
+            npx tsx src/index.ts
           fi
 
       - name: Run AI scoring
@@ -67,4 +65,4 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: npm run scrape -- --score-only
+        run: npx tsx src/index.ts --score-only
