@@ -152,24 +152,56 @@ export async function scrapeHowardCounty(): Promise<ScraperResult> {
 
     await page.waitForTimeout(500);
 
-    // Click search button
+    // Click search button - check bottom left area where Accela typically places it
     const searchSelectors = [
+      // Accela specific selectors - bottom left search button
+      'a[id$="_btnNewSearch"]',
+      'a[id*="PlaceHolderMain_btnNewSearch"]',
+      'input[id$="_btnNewSearch"]',
+      'input[id*="PlaceHolderMain_btnNewSearch"]',
+      // General search button selectors
       'a[id*="btnNewSearch"]',
       'input[id*="btnSearch"]',
       'button[id*="btnSearch"]',
       'a[id*="Search"]',
       'input[value="Search"]',
       'button:has-text("Search")',
+      'a:has-text("Search")',
+      // Link-based search buttons common in Accela
+      'a.ACA_LgButton[href*="javascript"]',
+      'a.ACA_LgButtonNew',
     ];
 
     let searchClicked = false;
     for (const selector of searchSelectors) {
       const searchButton = await page.$(selector);
       if (searchButton) {
-        console.log(`[${JURISDICTION}] Clicking search button: ${selector}`);
-        await searchButton.click();
-        searchClicked = true;
-        break;
+        const isVisible = await searchButton.isVisible();
+        if (isVisible) {
+          console.log(`[${JURISDICTION}] Clicking search button: ${selector}`);
+          await searchButton.click();
+          searchClicked = true;
+          break;
+        }
+      }
+    }
+
+    // If still not found, try finding by text content
+    if (!searchClicked) {
+      console.log(`[${JURISDICTION}] Trying to find search button by text...`);
+      const allLinks = await page.$$('a, input[type="submit"], input[type="button"], button');
+      for (const link of allLinks) {
+        const text = await link.textContent();
+        const value = await link.getAttribute('value');
+        if ((text && text.toLowerCase().includes('search')) || (value && value.toLowerCase().includes('search'))) {
+          const isVisible = await link.isVisible();
+          if (isVisible) {
+            console.log(`[${JURISDICTION}] Found search button by text: "${text || value}"`);
+            await link.click();
+            searchClicked = true;
+            break;
+          }
+        }
       }
     }
 
