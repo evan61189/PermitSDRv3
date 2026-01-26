@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Play, ExternalLink } from 'lucide-react';
 import PermitCard from '../components/PermitCard';
 import { usePermits, type PermitFilters } from '../hooks/usePermits';
 import {
@@ -11,6 +11,9 @@ import {
 } from '../types';
 
 const PAGE_SIZE = 20;
+
+// Update this with your actual GitHub repo
+const GITHUB_REPO = 'evan61189/PermitSDRv3';
 
 export default function Permits() {
   const [filters, setFilters] = useState<PermitFilters>({
@@ -27,6 +30,8 @@ export default function Permits() {
   const totalPages = Math.ceil((data?.count || 0) / PAGE_SIZE);
   const currentPage = Math.floor((filters.offset || 0) / PAGE_SIZE) + 1;
 
+  const hasActiveFilters = filters.jurisdiction || filters.projectType || filters.opportunityRating || filters.search;
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setFilters((f) => ({ ...f, search: searchInput, offset: 0 }));
@@ -40,14 +45,36 @@ export default function Permits() {
     setFilters((f) => ({ ...f, offset: (newPage - 1) * PAGE_SIZE }));
   };
 
+  const clearFilters = () => {
+    setFilters({
+      sortBy: 'created_at',
+      sortOrder: 'desc',
+      limit: PAGE_SIZE,
+      offset: 0,
+    });
+    setSearchInput('');
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Permits</h1>
-        <p className="mt-1 text-gray-500">
-          Browse and filter permit opportunities
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Permits</h1>
+          <p className="mt-1 text-gray-500">
+            Browse and filter permit opportunities
+          </p>
+        </div>
+        <a
+          href={`https://github.com/${GITHUB_REPO}/actions/workflows/scrape.yml`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          <Play className="w-4 h-4" />
+          Run Scraper
+          <ExternalLink className="w-3 h-3" />
+        </a>
       </div>
 
       {/* Filters */}
@@ -130,7 +157,42 @@ export default function Permits() {
         </div>
       ) : data?.data.length === 0 ? (
         <div className="card p-12 text-center">
-          <p className="text-gray-500">No permits found matching your criteria.</p>
+          {hasActiveFilters ? (
+            <>
+              <p className="text-gray-600 mb-4">No permits found matching your filters.</p>
+              <button
+                onClick={clearFilters}
+                className="text-blue-600 hover:text-blue-700 font-medium"
+              >
+                Clear all filters
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Play className="w-8 h-8 text-gray-400" />
+              </div>
+              <p className="text-gray-600 mb-2 font-medium">No permits in the database yet</p>
+              <p className="text-gray-500 text-sm mb-6">
+                Run the scraper to fetch permit data from Howard County, Baltimore County,
+                <br />
+                Baltimore City, Anne Arundel County, and Washington DC.
+              </p>
+              <a
+                href={`https://github.com/${GITHUB_REPO}/actions/workflows/scrape.yml`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Play className="w-5 h-5" />
+                Run Scraper on GitHub Actions
+                <ExternalLink className="w-4 h-4" />
+              </a>
+              <p className="text-gray-400 text-xs mt-4">
+                Click "Run workflow" on the GitHub Actions page to start scraping permits.
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <>
