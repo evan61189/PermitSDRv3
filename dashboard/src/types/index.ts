@@ -1,9 +1,7 @@
 export type Jurisdiction =
   | 'howard_county_md'
-  | 'baltimore_county_md'
   | 'baltimore_city_md'
-  | 'anne_arundel_county_md'
-  | 'dc';
+  | 'anne_arundel_county_md';
 
 export type ProjectType =
   | 'commercial_new'
@@ -42,6 +40,8 @@ export interface Permit {
   expiration_date?: string;
   source_url: string;
   source_jurisdiction: Jurisdiction;
+  screenshot_url?: string;
+  detail_url?: string;
   created_at: string;
   updated_at: string;
 }
@@ -70,10 +70,8 @@ export interface DashboardStats {
 
 export const JURISDICTION_NAMES: Record<Jurisdiction, string> = {
   howard_county_md: 'Howard County, MD',
-  baltimore_county_md: 'Baltimore County, MD',
   baltimore_city_md: 'Baltimore City, MD',
   anne_arundel_county_md: 'Anne Arundel County, MD',
-  dc: 'Washington, DC',
 };
 
 export const PROJECT_TYPE_NAMES: Record<ProjectType, string> = {
