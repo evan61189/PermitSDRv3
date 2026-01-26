@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import PermitCard from '../components/PermitCard';
 import { usePermits, type PermitFilters } from '../hooks/usePermits';
 import {
