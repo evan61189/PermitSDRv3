@@ -1,3 +1,6 @@
+# Netlify configuration for Permit SDR Dashboard
+# The dashboard is in the /dashboard subdirectory
+
 [build]
   base = "dashboard"
   command = "npm install && npm run build"
