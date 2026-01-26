@@ -40,10 +40,10 @@ export async function scrapeHowardCounty(): Promise<ScraperResult> {
       await page.waitForLoadState('networkidle');
     }
 
-    // Set date range to last 30 days
+    // Set date range to last 7 days
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 30);
+    startDate.setDate(startDate.getDate() - 7);
 
     // Try to find and fill date inputs
     const startDateInput = await page.$('input[id*="txtGSStartDate"], input[id*="StartDate"]');

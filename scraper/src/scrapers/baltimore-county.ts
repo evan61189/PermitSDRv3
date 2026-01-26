@@ -47,7 +47,7 @@ export async function scrapeBaltimoreCounty(): Promise<ScraperResult> {
     // Set date range
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 30);
+    startDate.setDate(startDate.getDate() - 7);
 
     // Look for date inputs with various possible IDs
     const dateInputSelectors = [
