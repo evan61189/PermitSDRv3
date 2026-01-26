@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, ChevronLeft, ChevronRight, Play, ExternalLink } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Play, Loader2 } from 'lucide-react';
 import PermitCard from '../components/PermitCard';
 import { usePermits, type PermitFilters } from '../hooks/usePermits';
 import {
@@ -12,9 +12,6 @@ import {
 
 const PAGE_SIZE = 20;
 
-// Update this with your actual GitHub repo
-const GITHUB_REPO = 'evan61189/PermitSDRv3';
-
 export default function Permits() {
   const [filters, setFilters] = useState<PermitFilters>({
     sortBy: 'created_at',
@@ -24,8 +21,45 @@ export default function Permits() {
   });
 
   const [searchInput, setSearchInput] = useState('');
+  const [scraperStatus, setScraperStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [scraperMessage, setScraperMessage] = useState('');
 
   const { data, isLoading, error } = usePermits(filters);
+
+  const triggerScraper = async () => {
+    setScraperStatus('loading');
+    setScraperMessage('');
+
+    try {
+      const response = await fetch('/.netlify/functions/trigger-scraper', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          runScoring: true,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setScraperStatus('success');
+        setScraperMessage('Scraper triggered! Check back in a few minutes for new permits.');
+        // Reset status after 5 seconds
+        setTimeout(() => {
+          setScraperStatus('idle');
+          setScraperMessage('');
+        }, 5000);
+      } else {
+        setScraperStatus('error');
+        setScraperMessage(data.message || data.error || 'Failed to trigger scraper');
+      }
+    } catch (err) {
+      setScraperStatus('error');
+      setScraperMessage(err instanceof Error ? err.message : 'Failed to trigger scraper');
+    }
+  };
 
   const totalPages = Math.ceil((data?.count || 0) / PAGE_SIZE);
   const currentPage = Math.floor((filters.offset || 0) / PAGE_SIZE) + 1;
@@ -65,16 +99,25 @@ export default function Permits() {
             Browse and filter permit opportunities
           </p>
         </div>
-        <a
-          href={`https://github.com/${GITHUB_REPO}/actions/workflows/scrape.yml`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Play className="w-4 h-4" />
-          Run Scraper
-          <ExternalLink className="w-3 h-3" />
-        </a>
+        <div className="flex items-center gap-3">
+          {scraperMessage && (
+            <span className={`text-sm ${scraperStatus === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+              {scraperMessage}
+            </span>
+          )}
+          <button
+            onClick={triggerScraper}
+            disabled={scraperStatus === 'loading'}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {scraperStatus === 'loading' ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Play className="w-4 h-4" />
+            )}
+            {scraperStatus === 'loading' ? 'Triggering...' : 'Run Scraper'}
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -178,18 +221,25 @@ export default function Permits() {
                 <br />
                 Baltimore City, Anne Arundel County, and Washington DC.
               </p>
-              <a
-                href={`https://github.com/${GITHUB_REPO}/actions/workflows/scrape.yml`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              {scraperMessage && (
+                <p className={`text-sm mb-4 ${scraperStatus === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                  {scraperMessage}
+                </p>
+              )}
+              <button
+                onClick={triggerScraper}
+                disabled={scraperStatus === 'loading'}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Play className="w-5 h-5" />
-                Run Scraper on GitHub Actions
-                <ExternalLink className="w-4 h-4" />
-              </a>
+                {scraperStatus === 'loading' ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Play className="w-5 h-5" />
+                )}
+                {scraperStatus === 'loading' ? 'Triggering Scraper...' : 'Run Scraper'}
+              </button>
               <p className="text-gray-400 text-xs mt-4">
-                Click "Run workflow" on the GitHub Actions page to start scraping permits.
+                The scraper will run in the background. Check back in a few minutes for new permits.
               </p>
             </>
           )}
