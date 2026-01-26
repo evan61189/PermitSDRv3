@@ -120,8 +120,13 @@ export default function Permits() {
       {isLoading ? (
         <div className="text-center py-12 text-gray-500">Loading permits...</div>
       ) : error ? (
-        <div className="text-center py-12 text-red-500">
-          Error loading permits. Please try again.
+        <div className="card p-12 text-center">
+          <p className="text-red-500 mb-4">Error loading permits</p>
+          <p className="text-gray-500 text-sm">
+            Please ensure Supabase is configured correctly and the database schema has been created.
+            <br />
+            Check that VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY environment variables are set.
+          </p>
         </div>
       ) : data?.data.length === 0 ? (
         <div className="card p-12 text-center">

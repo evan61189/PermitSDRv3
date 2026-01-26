@@ -39,10 +39,10 @@ export async function scrapeAnneArundelCounty(): Promise<ScraperResult> {
       await page.waitForTimeout(2000);
     }
 
-    // Set date range for last 30 days
+    // Set date range for last 7 days
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 30);
+    startDate.setDate(startDate.getDate() - 7);
 
     // Find and fill date fields
     const startDateInput = await page.$('input[id*="txtGSStartDate"], input[id*="StartDate"]');

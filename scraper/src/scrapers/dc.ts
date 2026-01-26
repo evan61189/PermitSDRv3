@@ -59,7 +59,7 @@ export async function scrapeDC(): Promise<ScraperResult> {
     // Set date range
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 30);
+    startDate.setDate(startDate.getDate() - 7);
 
     // Look for search form and date inputs
     const startDateInput = await page.$('input[id*="txtGSStartDate"], input[id*="StartDate"], input[name*="startDate"]');
