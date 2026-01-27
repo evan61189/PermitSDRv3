@@ -39,10 +39,10 @@ export async function scrapeBaltimoreCityMD(): Promise<ScraperResult> {
     // Step 2: Find dropdown by label "Record Type" and select "Commercial and Multifamily Combo Permit"
     await selectDropdownByLabel(page, DROPDOWN_LABEL, RECORD_TYPE_TO_SELECT);
 
-    // Step 3: Enter date range (last 3 days)
+    // Step 3: Enter date range (last 7 days)
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 3);
+    startDate.setDate(startDate.getDate() - 7);
     await enterDateRange(page, startDate, endDate);
 
     // Step 4: Click search button
@@ -490,29 +490,60 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
 
   try {
     // Extract data using Accela-specific element selectors
-    // Address - look for address in specific Accela elements
-    const addressSelectors = [
-      '[id*="lblAddress"]',
-      '[id*="txtAddress"]',
-      '[id*="FullAddress"]',
-      'span[id*="Address"]',
-      '.ACA_TabRow span[id*="Address"]',
-    ];
-    for (const selector of addressSelectors) {
+    // Work Location / Address - look for "Work Location" label first
+    const addressLabels = ['Work Location', 'Project Address', 'Address', 'Location'];
+
+    for (const label of addressLabels) {
+      if (permitData.address) break;
+
       try {
-        const el = page.locator(selector).first();
-        if (await el.isVisible({ timeout: 500 })) {
-          const text = await el.textContent();
-          if (text && text.trim().length > 5 && !text.toLowerCase().includes('address')) {
-            permitData.address = text.trim();
-            break;
+        const labelEl = page.locator(`span:has-text("${label}"), td:has-text("${label}")`).first();
+        if (await labelEl.isVisible({ timeout: 500 })) {
+          const parent = labelEl.locator('xpath=ancestor::tr').first();
+          if (await parent.isVisible({ timeout: 300 })) {
+            const cells = await parent.locator('td, span').all();
+            for (const cell of cells) {
+              const cellText = await cell.textContent() || '';
+              const trimmed = cellText.trim();
+              // Skip if it's the label itself or too short
+              if (trimmed.length > 5 &&
+                  !trimmed.toLowerCase().includes('location') &&
+                  !trimmed.toLowerCase().includes('address') &&
+                  !trimmed.toLowerCase().includes('work loc')) {
+                permitData.address = trimmed;
+                break;
+              }
+            }
           }
         }
       } catch { continue; }
     }
 
-    // Description of Work / Project Description - look specifically for these fields
-    const descriptionLabels = ['Description of Work', 'Project Description', 'Work Description', 'Description'];
+    // Fallback: Try finding by ID patterns for address
+    if (!permitData.address) {
+      const addressSelectors = [
+        '[id*="WorkLocation"]',
+        '[id*="lblAddress"]',
+        '[id*="txtAddress"]',
+        '[id*="FullAddress"]',
+        'span[id*="Address"]',
+      ];
+      for (const selector of addressSelectors) {
+        try {
+          const el = page.locator(selector).first();
+          if (await el.isVisible({ timeout: 500 })) {
+            const text = await el.textContent();
+            if (text && text.trim().length > 5 && !text.toLowerCase().includes('address')) {
+              permitData.address = text.trim();
+              break;
+            }
+          }
+        } catch { continue; }
+      }
+    }
+
+    // Project Description - Baltimore City uses "Project Description" label
+    const descriptionLabels = ['Project Description', 'Description of Work', 'Work Description', 'Description'];
 
     for (const label of descriptionLabels) {
       if (permitData.description) break;
@@ -539,13 +570,13 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
       } catch { continue; }
     }
 
-    // Method 2: Try finding by ID patterns for description
+    // Method 2: Try finding by ID patterns for description (prioritize ProjectDescription for Baltimore City)
     if (!permitData.description) {
       const descSelectors = [
+        '[id*="ProjectDescription"]',
         '[id*="txtDescription"]',
         '[id*="lblDescription"]',
         '[id*="WorkDescription"]',
-        '[id*="ProjectDescription"]',
         '[id*="DescriptionOfWork"]',
       ];
       for (const selector of descSelectors) {
