@@ -52,21 +52,19 @@ export async function scrapeBaltimoreCityMD(): Promise<ScraperResult> {
     const rawPermits = await processPermitResults(page);
     console.log(`[${JURISDICTION}] Found ${rawPermits.length} permits`);
 
-    // Transform and filter permits
-    let skippedCount = 0;
+    // Transform permits - include ALL since they're already filtered by BCCM prefix
+    // Let AI scoring determine relevance instead of pre-filtering
     for (const raw of rawPermits) {
+      console.log(`[${JURISDICTION}] Raw permit data:`, JSON.stringify(raw, null, 2));
       const permit = transformPermit(raw);
       if (permit) {
-        if (isRelevantForClipperConstruction(permit.description, permit.permit_type, permit.project_type)) {
-          permits.push(permit);
-        } else {
-          skippedCount++;
-        }
+        permits.push(permit);
+        console.log(`[${JURISDICTION}] Added permit: ${permit.permit_number}`);
       }
     }
 
     await context.close();
-    console.log(`[${JURISDICTION}] Scrape complete. Found: ${permits.length}, Skipped: ${skippedCount}`);
+    console.log(`[${JURISDICTION}] Scrape complete. Found: ${permits.length} permits`);
 
     return {
       jurisdiction: JURISDICTION,
