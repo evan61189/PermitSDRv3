@@ -498,25 +498,56 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
 
   try {
     // Extract data using Accela-specific element selectors
-    // Address - look for address in specific Accela elements
-    const addressSelectors = [
-      '[id*="lblAddress"]',
-      '[id*="txtAddress"]',
-      '[id*="FullAddress"]',
-      'span[id*="Address"]',
-      '.ACA_TabRow span[id*="Address"]',
-    ];
-    for (const selector of addressSelectors) {
+    // Work Location / Address - look for "Work Location" label first
+    const addressLabels = ['Work Location', 'Project Address', 'Address', 'Location'];
+
+    for (const label of addressLabels) {
+      if (permitData.address) break;
+
       try {
-        const el = page.locator(selector).first();
-        if (await el.isVisible({ timeout: 500 })) {
-          const text = await el.textContent();
-          if (text && text.trim().length > 5 && !text.toLowerCase().includes('address')) {
-            permitData.address = text.trim();
-            break;
+        const labelEl = page.locator(`span:has-text("${label}"), td:has-text("${label}")`).first();
+        if (await labelEl.isVisible({ timeout: 500 })) {
+          const parent = labelEl.locator('xpath=ancestor::tr').first();
+          if (await parent.isVisible({ timeout: 300 })) {
+            const cells = await parent.locator('td, span').all();
+            for (const cell of cells) {
+              const cellText = await cell.textContent() || '';
+              const trimmed = cellText.trim();
+              // Skip if it's the label itself or too short
+              if (trimmed.length > 5 &&
+                  !trimmed.toLowerCase().includes('location') &&
+                  !trimmed.toLowerCase().includes('address') &&
+                  !trimmed.toLowerCase().includes('work loc')) {
+                permitData.address = trimmed;
+                break;
+              }
+            }
           }
         }
       } catch { continue; }
+    }
+
+    // Fallback: Try finding by ID patterns for address
+    if (!permitData.address) {
+      const addressSelectors = [
+        '[id*="WorkLocation"]',
+        '[id*="lblAddress"]',
+        '[id*="txtAddress"]',
+        '[id*="FullAddress"]',
+        'span[id*="Address"]',
+      ];
+      for (const selector of addressSelectors) {
+        try {
+          const el = page.locator(selector).first();
+          if (await el.isVisible({ timeout: 500 })) {
+            const text = await el.textContent();
+            if (text && text.trim().length > 5 && !text.toLowerCase().includes('address')) {
+              permitData.address = text.trim();
+              break;
+            }
+          }
+        } catch { continue; }
+      }
     }
 
     // Description of Work / Project Description - look specifically for these fields
