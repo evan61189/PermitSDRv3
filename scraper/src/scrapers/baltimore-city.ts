@@ -471,66 +471,10 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
   return permits;
 }
 
-async function checkAndClickNextPage(page: Page): Promise<boolean> {
-  // Scroll to bottom where pagination typically is
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  await page.waitForTimeout(500);
-
-  // Common pagination selectors for Accela/CitizenAccess portals
-  const nextPageSelectors = [
-    'a[id*="NextPage"]',
-    'a[id*="btnNext"]',
-    'a[title*="Next"]',
-    'a:has-text("Next")',
-    'a:has-text(">")',
-    'a:has-text(">>")',
-    '.aca_pagination a',
-    '[class*="pagination"] a',
-    '[id*="pager"] a',
-    'td.aca_pagination_td a',
-  ];
-
-  for (const selector of nextPageSelectors) {
-    try {
-      const nextButton = page.locator(selector).first();
-      if (await nextButton.isVisible({ timeout: 1000 })) {
-        const isDisabled = await nextButton.evaluate(el => {
-          return el.classList.contains('disabled') ||
-                 el.classList.contains('aspNetDisabled') ||
-                 el.getAttribute('disabled') !== null ||
-                 el.getAttribute('aria-disabled') === 'true';
-        });
-
-        if (!isDisabled) {
-          console.log(`[${JURISDICTION}] Found next page button, clicking...`);
-          await nextButton.click();
-          await page.waitForLoadState('networkidle');
-          return true;
-        }
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  // Check for numbered pagination
-  try {
-    const currentPageSpan = await page.$('span[class*="current"], span[class*="active"], a[class*="current"]');
-    if (currentPageSpan) {
-      const currentNum = await currentPageSpan.textContent();
-      const nextNum = parseInt(currentNum || '1') + 1;
-      const nextPageLink = page.locator(`a:text-is("${nextNum}")`).first();
-      if (await nextPageLink.isVisible({ timeout: 1000 })) {
-        console.log(`[${JURISDICTION}] Clicking page ${nextNum}...`);
-        await nextPageLink.click();
-        await page.waitForLoadState('networkidle');
-        return true;
-      }
-    }
-  } catch {
-    // No numbered pagination found
-  }
-
+async function checkAndClickNextPage(_page: Page): Promise<boolean> {
+  // Pagination disabled for now to avoid navigation errors
+  // Only processing first page of results
+  console.log(`[${JURISDICTION}] Pagination disabled - processing first page only`);
   return false;
 }
 
@@ -550,9 +494,8 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
     const addressSelectors = [
       '[id*="lblAddress"]',
       '[id*="txtAddress"]',
-      '[id*="Address"] span',
+      '[id*="FullAddress"]',
       'span[id*="Address"]',
-      'td:has-text("Address") + td',
       '.ACA_TabRow span[id*="Address"]',
     ];
     for (const selector of addressSelectors) {
@@ -568,44 +511,75 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
       } catch { continue; }
     }
 
-    // Description/Work Description - look for description fields
-    const descSelectors = [
-      '[id*="lblDescription"]',
-      '[id*="txtDescription"]',
-      '[id*="WorkDescription"]',
-      '[id*="Scope"]',
-      'span[id*="Description"]',
-      'td:has-text("Description") + td',
-      'td:has-text("Work Description") + td',
-    ];
-    for (const selector of descSelectors) {
+    // Description of Work / Project Description - look specifically for these fields
+    const descriptionLabels = ['Description of Work', 'Project Description', 'Work Description', 'Description'];
+
+    for (const label of descriptionLabels) {
+      if (permitData.description) break;
+
       try {
-        const el = page.locator(selector).first();
-        if (await el.isVisible({ timeout: 500 })) {
-          const text = await el.textContent();
-          if (text && text.trim().length > 3 && !text.toLowerCase().includes('description')) {
-            permitData.description = text.trim();
-            break;
+        const labelEl = page.locator(`span:has-text("${label}"), td:has-text("${label}")`).first();
+        if (await labelEl.isVisible({ timeout: 500 })) {
+          const parent = labelEl.locator('xpath=ancestor::tr').first();
+          if (await parent.isVisible({ timeout: 300 })) {
+            const cells = await parent.locator('td, span').all();
+            for (const cell of cells) {
+              const cellText = await cell.textContent() || '';
+              const trimmed = cellText.trim();
+              if (trimmed.length > 10 &&
+                  !trimmed.toLowerCase().includes('description') &&
+                  !trimmed.toLowerCase().includes('spell') &&
+                  !trimmed.toLowerCase().includes('work:')) {
+                permitData.description = trimmed;
+                break;
+              }
+            }
           }
         }
       } catch { continue; }
     }
 
-    // If no description found via selectors, try to find it in table rows
+    // Method 2: Try finding by ID patterns for description
+    if (!permitData.description) {
+      const descSelectors = [
+        '[id*="txtDescription"]',
+        '[id*="lblDescription"]',
+        '[id*="WorkDescription"]',
+        '[id*="ProjectDescription"]',
+        '[id*="DescriptionOfWork"]',
+      ];
+      for (const selector of descSelectors) {
+        try {
+          const el = page.locator(selector).first();
+          if (await el.isVisible({ timeout: 500 })) {
+            const text = await el.textContent();
+            if (text && text.trim().length > 5) {
+              permitData.description = text.trim();
+              break;
+            }
+          }
+        } catch { continue; }
+      }
+    }
+
+    // Method 3: Search all table rows for description content
     if (!permitData.description) {
       try {
         const rows = await page.$$('tr');
         for (const row of rows) {
-          const text = await row.textContent() || '';
-          if (text.toLowerCase().includes('description') || text.toLowerCase().includes('scope')) {
-            const cells = await row.$$('td, span');
+          const rowText = await row.textContent() || '';
+          const rowLower = rowText.toLowerCase();
+          if (rowLower.includes('description of work') ||
+              rowLower.includes('project description') ||
+              rowLower.includes('work description')) {
+            const cells = await row.$$('td');
             for (const cell of cells) {
               const cellText = await cell.textContent() || '';
-              if (cellText.trim().length > 10 &&
-                  !cellText.toLowerCase().includes('description') &&
-                  !cellText.toLowerCase().includes('scope') &&
-                  !cellText.toLowerCase().includes('spell')) {
-                permitData.description = cellText.trim();
+              const trimmed = cellText.trim();
+              if (trimmed.length > 10 &&
+                  !trimmed.toLowerCase().includes('description') &&
+                  !trimmed.toLowerCase().includes('spell')) {
+                permitData.description = trimmed;
                 break;
               }
             }
@@ -638,7 +612,7 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
     // Status
     const statusSelectors = [
       '[id*="lblStatus"]',
-      '[id*="Status"]',
+      '[id*="RecordStatus"]',
       'span[id*="Status"]',
     ];
     for (const selector of statusSelectors) {
