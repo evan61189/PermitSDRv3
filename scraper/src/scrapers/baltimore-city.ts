@@ -1,7 +1,6 @@
 import { Page } from 'playwright';
 import { getPage } from '../utils/browser.js';
 import { classifyProjectType, isRelevantForClipperConstruction } from '../utils/permit-filter.js';
-import { captureAndUploadScreenshot } from '../utils/screenshot.js';
 import type { Permit, ScraperResult, Jurisdiction } from '../types/index.js';
 
 const JURISDICTION: Jurisdiction = 'baltimore_city_md';
@@ -18,7 +17,6 @@ interface PermitData {
   date: string;
   applicantName?: string;
   detailUrl?: string;
-  screenshotUrl?: string;
 }
 
 export async function scrapeBaltimoreCityMD(): Promise<ScraperResult> {
@@ -437,10 +435,6 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
 
         // Extract permit details
         const permitData = await extractPermitDetails(page, permitNumber);
-
-        // Take screenshot
-        const screenshotUrl = await captureAndUploadScreenshot(page, permitNumber, JURISDICTION);
-        if (screenshotUrl) permitData.screenshotUrl = screenshotUrl;
         permitData.detailUrl = page.url();
 
         permits.push(permitData);
@@ -551,30 +545,116 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
   };
 
   try {
-    const pageText = await page.textContent('body') || '';
+    // Extract data using Accela-specific element selectors
+    // Address - look for address in specific Accela elements
+    const addressSelectors = [
+      '[id*="lblAddress"]',
+      '[id*="txtAddress"]',
+      '[id*="Address"] span',
+      'span[id*="Address"]',
+      'td:has-text("Address") + td',
+      '.ACA_TabRow span[id*="Address"]',
+    ];
+    for (const selector of addressSelectors) {
+      try {
+        const el = page.locator(selector).first();
+        if (await el.isVisible({ timeout: 500 })) {
+          const text = await el.textContent();
+          if (text && text.trim().length > 5 && !text.toLowerCase().includes('address')) {
+            permitData.address = text.trim();
+            break;
+          }
+        }
+      } catch { continue; }
+    }
 
-    const applicantMatch = pageText.match(/Applicant[:\s]+([^\n]+)/i) ||
-                          pageText.match(/Contact[:\s]+([^\n]+)/i);
-    if (applicantMatch) permitData.applicantName = applicantMatch[1].trim();
+    // Description/Work Description - look for description fields
+    const descSelectors = [
+      '[id*="lblDescription"]',
+      '[id*="txtDescription"]',
+      '[id*="WorkDescription"]',
+      '[id*="Scope"]',
+      'span[id*="Description"]',
+      'td:has-text("Description") + td',
+      'td:has-text("Work Description") + td',
+    ];
+    for (const selector of descSelectors) {
+      try {
+        const el = page.locator(selector).first();
+        if (await el.isVisible({ timeout: 500 })) {
+          const text = await el.textContent();
+          if (text && text.trim().length > 3 && !text.toLowerCase().includes('description')) {
+            permitData.description = text.trim();
+            break;
+          }
+        }
+      } catch { continue; }
+    }
 
-    const descMatch = pageText.match(/Description[:\s]+([^\n]+)/i) ||
-                     pageText.match(/Scope[:\s]+([^\n]+)/i) ||
-                     pageText.match(/Work Description[:\s]+([^\n]+)/i);
-    if (descMatch) permitData.description = descMatch[1].trim();
+    // If no description found via selectors, try to find it in table rows
+    if (!permitData.description) {
+      try {
+        const rows = await page.$$('tr');
+        for (const row of rows) {
+          const text = await row.textContent() || '';
+          if (text.toLowerCase().includes('description') || text.toLowerCase().includes('scope')) {
+            const cells = await row.$$('td, span');
+            for (const cell of cells) {
+              const cellText = await cell.textContent() || '';
+              if (cellText.trim().length > 10 &&
+                  !cellText.toLowerCase().includes('description') &&
+                  !cellText.toLowerCase().includes('scope') &&
+                  !cellText.toLowerCase().includes('spell')) {
+                permitData.description = cellText.trim();
+                break;
+              }
+            }
+            if (permitData.description) break;
+          }
+        }
+      } catch { /* ignore */ }
+    }
 
-    const addressMatch = pageText.match(/Address[:\s]+([^\n]+)/i) ||
-                        pageText.match(/Location[:\s]+([^\n]+)/i);
-    if (addressMatch) permitData.address = addressMatch[1].trim();
+    // Record/Permit Type
+    const typeSelectors = [
+      '[id*="lblRecordType"]',
+      '[id*="lblPermitType"]',
+      '[id*="RecordType"]',
+      '[id*="PermitType"]',
+    ];
+    for (const selector of typeSelectors) {
+      try {
+        const el = page.locator(selector).first();
+        if (await el.isVisible({ timeout: 500 })) {
+          const text = await el.textContent();
+          if (text && text.trim().length > 3) {
+            permitData.recordType = text.trim();
+            break;
+          }
+        }
+      } catch { continue; }
+    }
 
-    const statusMatch = pageText.match(/Status[:\s]+([^\n]+)/i);
-    if (statusMatch) permitData.status = statusMatch[1].trim();
+    // Status
+    const statusSelectors = [
+      '[id*="lblStatus"]',
+      '[id*="Status"]',
+      'span[id*="Status"]',
+    ];
+    for (const selector of statusSelectors) {
+      try {
+        const el = page.locator(selector).first();
+        if (await el.isVisible({ timeout: 500 })) {
+          const text = await el.textContent();
+          if (text && text.trim().length > 2 && !text.toLowerCase().includes('status')) {
+            permitData.status = text.trim();
+            break;
+          }
+        }
+      } catch { continue; }
+    }
 
-    const typeMatch = pageText.match(/Record Type[:\s]+([^\n]+)/i) ||
-                     pageText.match(/Permit Type[:\s]+([^\n]+)/i);
-    if (typeMatch) permitData.recordType = typeMatch[1].trim();
-
-    const dateMatch = pageText.match(/Date[:\s]+(\d{1,2}\/\d{1,2}\/\d{4})/i);
-    if (dateMatch) permitData.date = dateMatch[1];
+    console.log(`[${JURISDICTION}] Extracted - Address: "${permitData.address}", Description: "${permitData.description?.substring(0, 50)}..."`);
 
   } catch (error) {
     console.log(`[${JURISDICTION}] Error extracting details: ${error}`);
@@ -605,7 +685,6 @@ function transformPermit(raw: PermitData): Omit<Permit, 'id' | 'created_at' | 'u
     submission_date: parseDate(raw.date),
     source_url: BASE_URL,
     source_jurisdiction: JURISDICTION,
-    screenshot_url: raw.screenshotUrl,
     detail_url: raw.detailUrl,
     raw_data: raw as unknown as Record<string, unknown>,
   };
