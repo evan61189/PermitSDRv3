@@ -92,3 +92,21 @@ export async function getUnscorredPermits(limit = 50): Promise<Permit[]> {
 
   return data || [];
 }
+
+export async function deleteAllPermits(): Promise<{ deleted: number }> {
+  // First delete all AI scores (though CASCADE should handle this)
+  await supabase.from('ai_scores').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+
+  // Then delete all permits
+  const { data, error } = await supabase
+    .from('permits')
+    .delete()
+    .neq('id', '00000000-0000-0000-0000-000000000000')
+    .select('id');
+
+  if (error) {
+    throw new Error(`Failed to delete permits: ${error.message}`);
+  }
+
+  return { deleted: data?.length || 0 };
+}

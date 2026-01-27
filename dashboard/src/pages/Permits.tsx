@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Search, ChevronLeft, ChevronRight, Play, Loader2 } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Play, Loader2, Trash2 } from 'lucide-react';
 import PermitCard from '../components/PermitCard';
-import { usePermits, type PermitFilters } from '../hooks/usePermits';
+import { usePermits, useDeleteAllPermits, type PermitFilters } from '../hooks/usePermits';
 import {
   JURISDICTION_NAMES,
   PROJECT_TYPE_NAMES,
@@ -23,8 +23,10 @@ export default function Permits() {
   const [searchInput, setSearchInput] = useState('');
   const [scraperStatus, setScraperStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [scraperMessage, setScraperMessage] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const { data, isLoading, error } = usePermits(filters);
+  const deleteAllPermits = useDeleteAllPermits();
 
   const triggerScraper = async () => {
     setScraperStatus('loading');
@@ -89,6 +91,15 @@ export default function Permits() {
     setSearchInput('');
   };
 
+  const handleDeleteAll = async () => {
+    try {
+      await deleteAllPermits.mutateAsync();
+      setShowDeleteConfirm(false);
+    } catch (err) {
+      console.error('Failed to delete permits:', err);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -105,6 +116,18 @@ export default function Permits() {
               {scraperMessage}
             </span>
           )}
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            disabled={deleteAllPermits.isPending || (data?.count === 0)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {deleteAllPermits.isPending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Trash2 className="w-4 h-4" />
+            )}
+            {deleteAllPermits.isPending ? 'Deleting...' : 'Clear All'}
+          </button>
           <button
             onClick={triggerScraper}
             disabled={scraperStatus === 'loading'}
@@ -308,6 +331,51 @@ export default function Permits() {
             </div>
           )}
         </>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Delete All Permits?
+            </h3>
+            <p className="text-gray-600 mb-6">
+              This will permanently delete all {data?.count || 0} permits and their AI scores from the database. This action cannot be undone.
+            </p>
+            {deleteAllPermits.isError && (
+              <p className="text-red-600 text-sm mb-4">
+                Error: {deleteAllPermits.error?.message || 'Failed to delete permits'}
+              </p>
+            )}
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleteAllPermits.isPending}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteAll}
+                disabled={deleteAllPermits.isPending}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {deleteAllPermits.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Delete All
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

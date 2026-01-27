@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import type { PermitWithScore, DashboardStats, Jurisdiction, ProjectType, OpportunityRating } from '../types';
 
@@ -159,6 +159,36 @@ export function useHotOpportunities(limit = 10) {
       if (error) throw error;
 
       return data || [];
+    },
+  });
+}
+
+export function useDeleteAllPermits() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (): Promise<{ deleted: number }> => {
+      const response = await fetch('/.netlify/functions/delete-permits', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to delete permits');
+      }
+
+      return response.json();
+    },
+    onSuccess: () => {
+      // Invalidate all permit-related queries to refresh the UI
+      queryClient.invalidateQueries({ queryKey: ['permits'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['permits-by-type'] });
+      queryClient.invalidateQueries({ queryKey: ['permits-by-jurisdiction'] });
+      queryClient.invalidateQueries({ queryKey: ['hot-opportunities'] });
     },
   });
 }
