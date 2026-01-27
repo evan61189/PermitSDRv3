@@ -39,10 +39,10 @@ export async function scrapeHowardCounty(): Promise<ScraperResult> {
     // Step 2: Find dropdown by label "Permit Type" and select "Commercial Alteration Permit"
     await selectDropdownByLabel(page, DROPDOWN_LABEL, PERMIT_TYPE_TO_SELECT);
 
-    // Step 3: Enter date range (last 3 days)
+    // Step 3: Enter date range (last 7 days)
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 3);
+    startDate.setDate(startDate.getDate() - 7);
     await enterDateRange(page, startDate, endDate);
 
     // Step 4: Click search button (bottom left)

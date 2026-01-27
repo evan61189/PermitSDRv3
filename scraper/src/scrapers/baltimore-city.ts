@@ -39,10 +39,10 @@ export async function scrapeBaltimoreCityMD(): Promise<ScraperResult> {
     // Step 2: Find dropdown by label "Record Type" and select "Commercial and Multifamily Combo Permit"
     await selectDropdownByLabel(page, DROPDOWN_LABEL, RECORD_TYPE_TO_SELECT);
 
-    // Step 3: Enter date range (last 3 days)
+    // Step 3: Enter date range (last 7 days)
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 3);
+    startDate.setDate(startDate.getDate() - 7);
     await enterDateRange(page, startDate, endDate);
 
     // Step 4: Click search button
@@ -511,8 +511,8 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
       } catch { continue; }
     }
 
-    // Description of Work / Project Description - look specifically for these fields
-    const descriptionLabels = ['Description of Work', 'Project Description', 'Work Description', 'Description'];
+    // Project Description - Baltimore City uses "Project Description" label
+    const descriptionLabels = ['Project Description', 'Description of Work', 'Work Description', 'Description'];
 
     for (const label of descriptionLabels) {
       if (permitData.description) break;
@@ -539,13 +539,13 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
       } catch { continue; }
     }
 
-    // Method 2: Try finding by ID patterns for description
+    // Method 2: Try finding by ID patterns for description (prioritize ProjectDescription for Baltimore City)
     if (!permitData.description) {
       const descSelectors = [
+        '[id*="ProjectDescription"]',
         '[id*="txtDescription"]',
         '[id*="lblDescription"]',
         '[id*="WorkDescription"]',
-        '[id*="ProjectDescription"]',
         '[id*="DescriptionOfWork"]',
       ];
       for (const selector of descSelectors) {

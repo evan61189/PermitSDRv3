@@ -39,10 +39,10 @@ export async function scrapeAnneArundelCounty(): Promise<ScraperResult> {
     // Step 2: Find dropdown by label "Record Type" and select "Non Residential Alteration Permit"
     await selectDropdownByLabel(page, DROPDOWN_LABEL, RECORD_TYPE_TO_SELECT);
 
-    // Step 3: Enter date range (last 3 days)
+    // Step 3: Enter date range (last 7 days)
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 3);
+    startDate.setDate(startDate.getDate() - 7);
     await enterDateRange(page, startDate, endDate);
 
     // Step 4: Click search button
