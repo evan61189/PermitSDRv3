@@ -41,10 +41,10 @@ export async function scrapeAnneArundelCounty(): Promise<ScraperResult> {
     // Step 2: Find dropdown by label "Record Type" and select "Non Residential Alteration Permit"
     await selectDropdownByLabel(page, DROPDOWN_LABEL, RECORD_TYPE_TO_SELECT);
 
-    // Step 3: Enter date range (last 30 days)
+    // Step 3: Enter date range (last 3 days)
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 30);
+    startDate.setDate(startDate.getDate() - 3);
     await enterDateRange(page, startDate, endDate);
 
     // Step 4: Click search button
@@ -197,20 +197,31 @@ async function enterDateRange(page: Page, startDate: Date, endDate: Date): Promi
 async function clickSearchButton(page: Page): Promise<void> {
   console.log(`[${JURISDICTION}] Looking for search button...`);
 
+  // Scroll to bottom of page to ensure search button is visible
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForTimeout(1000);
+
+  // Accela-specific selectors for search buttons
   const searchSelectors = [
-    'a:has-text("Search")',
+    'a[id$="_lnkSearch"]',
+    'a[id*="btnNewSearch"]',
+    'a.ACA_LgButton:has-text("Search")',
+    'a.ACA_SmButton:has-text("Search")',
+    'a:has-text("Search"):not(:has-text("Clear"))',
     'button:has-text("Search")',
-    'input[value*="Search" i]',
+    'input[type="submit"][value*="Search" i]',
+    'input[type="button"][value*="Search" i]',
     '[id*="btnSearch" i]',
     '[id*="SearchButton" i]',
-    'a[id*="Search" i]',
   ];
 
   for (const selector of searchSelectors) {
     try {
       const button = page.locator(selector).first();
-      if (await button.isVisible({ timeout: 1500 })) {
+      if (await button.isVisible({ timeout: 2000 })) {
         console.log(`[${JURISDICTION}] Found search button with selector: ${selector}`);
+        await button.scrollIntoViewIfNeeded();
+        await page.waitForTimeout(500);
         await button.click();
         await page.waitForLoadState('networkidle');
         await page.waitForTimeout(3000);
@@ -219,6 +230,28 @@ async function clickSearchButton(page: Page): Promise<void> {
     } catch {
       continue;
     }
+  }
+
+  // Try to find any clickable element with "Search" text
+  console.log(`[${JURISDICTION}] Trying to find search by evaluating page...`);
+  const clicked = await page.evaluate(() => {
+    const elements = document.querySelectorAll('a, button, input');
+    for (const el of elements) {
+      const text = el.textContent?.toLowerCase() || '';
+      const value = (el as HTMLInputElement).value?.toLowerCase() || '';
+      if ((text.includes('search') || value.includes('search')) && !text.includes('clear')) {
+        (el as HTMLElement).click();
+        return true;
+      }
+    }
+    return false;
+  });
+
+  if (clicked) {
+    console.log(`[${JURISDICTION}] Clicked search via page evaluation`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(3000);
+    return;
   }
 
   console.log(`[${JURISDICTION}] No search button found, pressing Enter`);
