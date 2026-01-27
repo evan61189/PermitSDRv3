@@ -5,7 +5,7 @@ import { captureAndUploadScreenshot } from '../utils/screenshot.js';
 import type { Permit, ScraperResult, Jurisdiction } from '../types/index.js';
 
 const JURISDICTION: Jurisdiction = 'howard_county_md';
-const BASE_URL = 'https://aca-prod.accela.com/HOWARDCO/Cap/CapHome.aspx?module=Building';
+const BASE_URL = 'https://dilp.howardcountymd.gov/CitizenAccess/Cap/CapHome.aspx?module=Building&TabName=HOME';
 const DROPDOWN_LABEL = 'Permit Type';
 const PERMIT_TYPE_TO_SELECT = 'Commercial Alteration Permit';
 
