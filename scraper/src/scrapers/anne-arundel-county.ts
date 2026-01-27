@@ -420,9 +420,9 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
         .map(a => a.textContent!.trim())
     );
 
-    // Remove duplicates
-    const uniquePermitLinks = [...new Set(permitLinks)];
-    console.log(`[${JURISDICTION}] Found ${uniquePermitLinks.length} permit links on page ${currentPage}`);
+    // Remove duplicates and filter to only Anne Arundel permits starting with "B"
+    const uniquePermitLinks = [...new Set(permitLinks)].filter(permit => permit.startsWith('B'));
+    console.log(`[${JURISDICTION}] Found ${uniquePermitLinks.length} relevant permit links (B*) on page ${currentPage}`);
 
     // Process each permit on this page
     for (let i = 0; i < uniquePermitLinks.length; i++) {
