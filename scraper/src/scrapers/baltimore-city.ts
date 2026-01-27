@@ -414,9 +414,9 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
         .map(a => a.textContent!.trim())
     );
 
-    // Remove duplicates
-    const uniquePermitLinks = [...new Set(permitLinks)];
-    console.log(`[${JURISDICTION}] Found ${uniquePermitLinks.length} permit links on page ${currentPage}`);
+    // Remove duplicates and filter to only Baltimore City permits starting with "BCCM"
+    const uniquePermitLinks = [...new Set(permitLinks)].filter(permit => permit.startsWith('BCCM'));
+    console.log(`[${JURISDICTION}] Found ${uniquePermitLinks.length} relevant permit links (BCCM*) on page ${currentPage}`);
 
     // Process each permit on this page
     for (let i = 0; i < uniquePermitLinks.length; i++) {

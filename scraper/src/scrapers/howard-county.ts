@@ -422,9 +422,9 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
         .map(a => a.textContent!.trim())
     );
 
-    // Remove duplicates
-    const uniquePermitLinks = [...new Set(permitLinks)];
-    console.log(`[${JURISDICTION}] Found ${uniquePermitLinks.length} permit links on page ${currentPage}`);
+    // Remove duplicates and filter to only Howard County permits starting with "B2"
+    const uniquePermitLinks = [...new Set(permitLinks)].filter(permit => permit.startsWith('B2'));
+    console.log(`[${JURISDICTION}] Found ${uniquePermitLinks.length} relevant permit links (B2*) on page ${currentPage}`);
 
     // Process each permit on this page
     for (let i = 0; i < uniquePermitLinks.length; i++) {
