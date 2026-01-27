@@ -103,57 +103,139 @@ async function handleDisclaimer(page: Page): Promise<void> {
 }
 
 async function selectDropdownByLabel(page: Page, labelText: string, optionText: string): Promise<void> {
-  console.log(`[${JURISDICTION}] Looking for dropdown with label "${labelText}"...`);
+  console.log(`[${JURISDICTION}] Looking for dropdown with label "${labelText}" under General Search...`);
 
-  // Find the label containing the text, then find the associated select
-  let dropdown = page.locator(`label:has-text("${labelText}") + select, label:has-text("${labelText}") ~ select`).first();
+  // Wait for page to be fully loaded
+  await page.waitForLoadState('domcontentloaded');
+  await page.waitForTimeout(2000);
 
-  if (!await dropdown.isVisible({ timeout: 2000 }).catch(() => false)) {
-    dropdown = page.locator(`text="${labelText}" >> .. >> select`).first();
+  // Log all dropdowns on the page for debugging
+  const allDropdowns = await page.$$eval('select', selects =>
+    selects.map(s => ({
+      id: s.id,
+      name: s.name,
+      optionCount: s.options.length,
+      firstOptions: Array.from(s.options).slice(0, 5).map(o => o.text.trim())
+    }))
+  );
+  console.log(`[${JURISDICTION}] Found ${allDropdowns.length} dropdowns on page:`);
+  allDropdowns.forEach((d, i) => {
+    console.log(`[${JURISDICTION}]   ${i + 1}. id="${d.id}" options: ${d.firstOptions.join(', ')}`);
+  });
+
+  let dropdown = null;
+
+  // Method 1: Look for dropdown under "General Search" section
+  try {
+    const generalSearchSection = page.locator('text="General Search" >> xpath=ancestor::div[contains(@class,"ACA_Section")] | text="General Search" >> xpath=ancestor::fieldset | text="General Search" >> xpath=ancestor::table').first();
+    if (await generalSearchSection.isVisible({ timeout: 2000 }).catch(() => false)) {
+      console.log(`[${JURISDICTION}] Found General Search section`);
+      dropdown = generalSearchSection.locator('select').first();
+      if (!await dropdown.isVisible({ timeout: 1000 }).catch(() => false)) {
+        dropdown = null;
+      }
+    }
+  } catch {
+    console.log(`[${JURISDICTION}] Could not find General Search section`);
   }
 
-  if (!await dropdown.isVisible({ timeout: 2000 }).catch(() => false)) {
-    dropdown = page.locator('select[id*="Type" i], select[name*="Type" i]').first();
+  // Method 2: Look for Accela-specific dropdown IDs
+  if (!dropdown) {
+    const accelaTypeSelectors = [
+      'select[id*="ddlPermitType"]',
+      'select[id*="ddlRecordType"]',
+      'select[id*="RecordType"]',
+      'select[id*="PermitType"]',
+      'select[id*="Type"][id*="ddl"]',
+      'select[id*="ctl00"][id*="Type"]',
+    ];
+
+    for (const selector of accelaTypeSelectors) {
+      try {
+        const el = page.locator(selector).first();
+        if (await el.isVisible({ timeout: 1000 })) {
+          dropdown = el;
+          console.log(`[${JURISDICTION}] Found dropdown with Accela selector: ${selector}`);
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
   }
 
-  if (!await dropdown.isVisible({ timeout: 2000 }).catch(() => false)) {
+  // Method 3: Find by label text
+  if (!dropdown) {
+    const labelSelectors = [
+      `span:has-text("${labelText}") >> xpath=ancestor::tr >> select`,
+      `td:has-text("${labelText}") >> xpath=following-sibling::td >> select`,
+      `label:has-text("${labelText}") >> xpath=following::select[1]`,
+    ];
+
+    for (const selector of labelSelectors) {
+      try {
+        const el = page.locator(selector).first();
+        if (await el.isVisible({ timeout: 1000 })) {
+          dropdown = el;
+          console.log(`[${JURISDICTION}] Found dropdown via label: ${selector}`);
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  // Method 4: Find any dropdown with matching options
+  if (!dropdown || !await dropdown.isVisible({ timeout: 1000 }).catch(() => false)) {
+    console.log(`[${JURISDICTION}] Scanning all dropdowns for option "${optionText}"...`);
     const allSelects = page.locator('select');
     const count = await allSelects.count();
 
     for (let i = 0; i < count; i++) {
       const select = allSelects.nth(i);
-      const options = await select.locator('option').allTextContents();
-      const hasOption = options.some(opt =>
-        opt.toLowerCase().includes('commercial') || opt.toLowerCase().includes('multifamily')
-      );
-      if (hasOption) {
-        dropdown = select;
-        console.log(`[${JURISDICTION}] Found dropdown by scanning options`);
-        break;
+      try {
+        const options = await select.locator('option').allTextContents();
+        const hasOption = options.some(opt =>
+          opt.toLowerCase().includes('commercial') || opt.toLowerCase().includes('multifamily')
+        );
+        if (hasOption) {
+          dropdown = select;
+          console.log(`[${JURISDICTION}] Found dropdown by option match at index ${i}`);
+          break;
+        }
+      } catch {
+        continue;
       }
     }
   }
 
   // Select the option
-  try {
-    const options = await dropdown.locator('option').allTextContents();
-    console.log(`[${JURISDICTION}] Available options: ${options.slice(0, 10).join(', ')}...`);
+  if (dropdown) {
+    try {
+      await dropdown.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(500);
+      const options = await dropdown.locator('option').allTextContents();
+      console.log(`[${JURISDICTION}] Dropdown options: ${options.slice(0, 15).join(', ')}${options.length > 15 ? '...' : ''}`);
 
-    const exactMatch = options.find(opt => opt.trim().toLowerCase() === optionText.toLowerCase());
-    const partialMatch = options.find(opt =>
-      opt.toLowerCase().includes('commercial') && opt.toLowerCase().includes('multifamily')
-    );
-    const targetOption = exactMatch || partialMatch;
+      const exactMatch = options.find(opt => opt.trim().toLowerCase() === optionText.toLowerCase());
+      const partialMatch = options.find(opt =>
+        opt.toLowerCase().includes('commercial') && opt.toLowerCase().includes('multifamily')
+      );
+      const targetOption = exactMatch || partialMatch;
 
-    if (targetOption) {
-      console.log(`[${JURISDICTION}] Selecting: "${targetOption}"`);
-      await dropdown.selectOption({ label: targetOption });
-      await page.waitForTimeout(1500);
-    } else {
-      console.log(`[${JURISDICTION}] Warning: Could not find option "${optionText}"`);
+      if (targetOption) {
+        console.log(`[${JURISDICTION}] Selecting: "${targetOption}"`);
+        await dropdown.selectOption({ label: targetOption });
+        await page.waitForTimeout(2000);
+      } else {
+        console.log(`[${JURISDICTION}] Warning: Could not find option "${optionText}"`);
+      }
+    } catch (error) {
+      console.log(`[${JURISDICTION}] Error selecting dropdown: ${error}`);
     }
-  } catch (error) {
-    console.log(`[${JURISDICTION}] Error selecting dropdown: ${error}`);
+  } else {
+    console.log(`[${JURISDICTION}] Warning: No dropdown found for "${labelText}"`);
   }
 }
 
@@ -193,7 +275,26 @@ async function enterDateRange(page: Page, startDate: Date, endDate: Date): Promi
 async function clickSearchButton(page: Page): Promise<void> {
   console.log(`[${JURISDICTION}] Looking for search button...`);
 
-  // Scroll to bottom of page to ensure search button is visible
+  // Log all buttons/links for debugging
+  const allButtons = await page.$$eval('a, button, input[type="submit"], input[type="button"]', elements =>
+    elements.map(el => ({
+      tag: el.tagName,
+      id: el.id,
+      text: el.textContent?.trim().substring(0, 30),
+      value: (el as HTMLInputElement).value
+    })).filter(el => el.text || el.value)
+  );
+  const searchButtons = allButtons.filter(b =>
+    (b.text?.toLowerCase().includes('search') || b.value?.toLowerCase().includes('search')) &&
+    !b.text?.toLowerCase().includes('clear')
+  );
+  console.log(`[${JURISDICTION}] Search-related buttons:`, searchButtons);
+
+  // Scroll down to make search button visible
+  for (let i = 0; i < 3; i++) {
+    await page.evaluate(() => window.scrollBy(0, 500));
+    await page.waitForTimeout(500);
+  }
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await page.waitForTimeout(1000);
 
@@ -201,8 +302,10 @@ async function clickSearchButton(page: Page): Promise<void> {
   const searchSelectors = [
     'a[id$="_lnkSearch"]',
     'a[id*="btnNewSearch"]',
+    'a[id*="lnkSearch"]',
     'a.ACA_LgButton:has-text("Search")',
     'a.ACA_SmButton:has-text("Search")',
+    '.ACA_LgButton:has-text("Search")',
     'a:has-text("Search"):not(:has-text("Clear"))',
     'button:has-text("Search")',
     'input[type="submit"][value*="Search" i]',
@@ -228,15 +331,19 @@ async function clickSearchButton(page: Page): Promise<void> {
     }
   }
 
-  // Try to find any clickable element with "Search" text
+  // Try to find and click via JavaScript
   console.log(`[${JURISDICTION}] Trying to find search by evaluating page...`);
   const clicked = await page.evaluate(() => {
-    const elements = document.querySelectorAll('a, button, input');
+    window.scrollTo(0, document.body.scrollHeight);
+    const elements = document.querySelectorAll('a, button, input[type="submit"], input[type="button"]');
     for (const el of elements) {
-      const text = el.textContent?.toLowerCase() || '';
+      const text = el.textContent?.toLowerCase().trim() || '';
       const value = (el as HTMLInputElement).value?.toLowerCase() || '';
-      if ((text.includes('search') || value.includes('search')) && !text.includes('clear')) {
-        (el as HTMLElement).click();
+      const id = el.id?.toLowerCase() || '';
+      if ((text === 'search' || value === 'search' || id.includes('search') || id.includes('lnksearch')) &&
+          !text.includes('clear') && !id.includes('clear')) {
+        (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => (el as HTMLElement).click(), 500);
         return true;
       }
     }
@@ -245,6 +352,7 @@ async function clickSearchButton(page: Page): Promise<void> {
 
   if (clicked) {
     console.log(`[${JURISDICTION}] Clicked search via page evaluation`);
+    await page.waitForTimeout(1000);
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
     return;
