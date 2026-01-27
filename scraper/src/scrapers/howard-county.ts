@@ -503,46 +503,59 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
     date: '',
   };
 
-  // Helper function to check if text looks like JavaScript/HTML code
-  const isJavaScriptOrJunk = (text: string): boolean => {
+  // Helper function to check if text is junk (JavaScript, labels, etc.)
+  const isJunk = (text: string): boolean => {
     const junkPatterns = [
       'var ', 'function', 'searchWaterMark', '__doPostBack', 'window.',
       'document.', 'ctl00', 'onclick', 'keydown', 'keyCode', '$(',
       'getElementById', 'querySelector', '.click', '.value', 'return ',
-      'if(', 'if (', '&&', '||', '===', '!==', 'event', 'callee'
+      'if(', 'if (', '&&', '||', '===', '!==', 'event', 'callee',
+      'Search...', 'javascript', '<script', '</script'
     ];
-    const lowerText = text.toLowerCase();
-    return junkPatterns.some(pattern => text.includes(pattern) || lowerText.includes(pattern.toLowerCase()));
+    return junkPatterns.some(pattern => text.includes(pattern));
   };
 
-  // Helper to validate address format (should look like a street address)
+  // Helper to check if text is a valid address (simple check)
   const isValidAddress = (text: string): boolean => {
-    if (!text || text.length < 5 || text.length > 200) return false;
-    if (isJavaScriptOrJunk(text)) return false;
-    const hasNumber = /\d/.test(text);
-    const hasLetter = /[a-zA-Z]/.test(text);
-    const addressWords = ['st', 'street', 'ave', 'avenue', 'rd', 'road', 'dr', 'drive', 'blvd', 'ln', 'lane', 'way', 'ct', 'court', 'pl', 'place', 'howard', 'ellicott', 'columbia', 'md'];
+    if (!text || text.length < 5 || text.length > 300) return false;
+    if (isJunk(text)) return false;
+    // Must have at least one number (street number)
+    if (!/\d/.test(text)) return false;
+    // Must have letters
+    if (!/[a-zA-Z]/.test(text)) return false;
+    return true;
+  };
+
+  // Helper to check if text is a valid description
+  const isValidDescription = (text: string): boolean => {
+    if (!text || text.length < 10 || text.length > 2000) return false;
+    if (isJunk(text)) return false;
     const lowerText = text.toLowerCase();
-    const hasAddressWord = addressWords.some(word => lowerText.includes(word));
-    return hasNumber && hasLetter && (hasAddressWord || text.includes(','));
+    // Exclude labels and irrelevant content
+    const excludePatterns = [
+      'licensed professional', 'license number', 'contractor name',
+      'applicant name', 'contact information', 'spell check',
+      'project description:', 'description of work:', 'description:'
+    ];
+    if (excludePatterns.some(p => lowerText.includes(p))) return false;
+    return true;
   };
 
   try {
-    // Extract data using Accela-specific element selectors
-    // Work Location / Address - first try specific ID selectors for the actual address value
-    const addressIdSelectors = [
-      '[id*="lblFullAddress"]',
-      '[id*="FullAddress"]:not([id*="Search"])',
-      '[id*="lblWorkLocation"]:not([id*="Search"])',
-      '[id*="txtFullAddress"]',
-      'span[id*="Address"][id*="lbl"]',
+    // === ADDRESS EXTRACTION ===
+    // Method 1: Look for specific full address elements by ID
+    const addressSelectors = [
+      'span[id*="lblFullAddress"]',
+      'span[id*="FullAddress"]:not([id*="Search"]):not([id*="search"])',
+      'span[id*="WorkLocationFullAddress"]',
+      'div[id*="FullAddress"]',
     ];
 
-    for (const selector of addressIdSelectors) {
+    for (const selector of addressSelectors) {
       if (permitData.address) break;
       try {
-        const el = page.locator(selector).first();
-        if (await el.isVisible({ timeout: 500 })) {
+        const elements = await page.locator(selector).all();
+        for (const el of elements) {
           const text = await el.textContent();
           if (text && isValidAddress(text.trim())) {
             permitData.address = text.trim();
@@ -552,107 +565,76 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
       } catch { continue; }
     }
 
-    // Fallback: Label-based extraction for Work Location
+    // Method 2: Find the Work Location section and extract address from it
     if (!permitData.address) {
-      const addressLabels = ['Work Location', 'Project Address', 'Address', 'Location'];
-
-      for (const label of addressLabels) {
-        if (permitData.address) break;
-
-        try {
-          const labelEl = page.locator(`span:has-text("${label}"), td:has-text("${label}")`).first();
-          if (await labelEl.isVisible({ timeout: 500 })) {
-            const parent = labelEl.locator('xpath=ancestor::tr').first();
-            if (await parent.isVisible({ timeout: 300 })) {
-              const cells = await parent.locator('td, span').all();
-              for (const cell of cells) {
-                const cellText = await cell.textContent() || '';
-                const trimmed = cellText.trim();
-                if (isValidAddress(trimmed) &&
-                    !trimmed.toLowerCase().includes('location') &&
-                    !trimmed.toLowerCase().includes('work loc')) {
-                  permitData.address = trimmed;
-                  break;
-                }
-              }
+      try {
+        const workLocationSection = page.locator('div:has(> span:text-is("Work Location")), div:has(> h1:text-is("Work Location")), fieldset:has(legend:text-is("Work Location"))').first();
+        if (await workLocationSection.isVisible({ timeout: 500 })) {
+          const addressEl = workLocationSection.locator('span[id*="Address"], span[id*="FullAddress"]').first();
+          if (await addressEl.isVisible({ timeout: 300 })) {
+            const text = await addressEl.textContent();
+            if (text && isValidAddress(text.trim())) {
+              permitData.address = text.trim();
             }
           }
-        } catch { continue; }
-      }
+        }
+      } catch { /* continue */ }
     }
 
-    // Description of Work / Project Description - look specifically for these fields
-    // First try to find by looking for rows containing these exact labels
-    const descriptionLabels = ['Description of Work', 'Project Description', 'Work Description', 'Description'];
-
-    for (const label of descriptionLabels) {
-      if (permitData.description) break;
-
+    // Method 3: Search all visible spans for address-like content
+    if (!permitData.address) {
       try {
-        // Method 1: Find span/td with label text and get sibling/adjacent value
-        const labelEl = page.locator(`span:has-text("${label}"), td:has-text("${label}")`).first();
-        if (await labelEl.isVisible({ timeout: 500 })) {
-          // Try to get the value from the next element or parent row
-          const parent = labelEl.locator('xpath=ancestor::tr').first();
-          if (await parent.isVisible({ timeout: 300 })) {
-            const cells = await parent.locator('td, span').all();
-            for (const cell of cells) {
-              const cellText = await cell.textContent() || '';
-              const trimmed = cellText.trim();
-              // Skip if it's the label itself or too short
-              if (trimmed.length > 10 &&
-                  !trimmed.toLowerCase().includes('description') &&
-                  !trimmed.toLowerCase().includes('spell') &&
-                  !trimmed.toLowerCase().includes('work:')) {
-                permitData.description = trimmed;
-                break;
-              }
+        const spans = await page.locator('span[id*="lbl"]').all();
+        for (const span of spans) {
+          const text = await span.textContent();
+          const id = await span.getAttribute('id') || '';
+          if (id.toLowerCase().includes('address') || id.toLowerCase().includes('location')) {
+            if (text && isValidAddress(text.trim()) && !id.toLowerCase().includes('search')) {
+              permitData.address = text.trim();
+              break;
             }
+          }
+        }
+      } catch { /* continue */ }
+    }
+
+    // === DESCRIPTION EXTRACTION ===
+    // Method 1: Try finding by ID patterns for Description of Work (most reliable)
+    const descSelectors = [
+      'span[id*="txtDescriptionOfWork"]',
+      'span[id*="DescriptionOfWork"]',
+      'textarea[id*="DescriptionOfWork"]',
+      'span[id*="txtASIProjectDescription"]',
+      'span[id*="ProjectDescription"]',
+    ];
+
+    for (const selector of descSelectors) {
+      if (permitData.description) break;
+      try {
+        const elements = await page.locator(selector).all();
+        for (const el of elements) {
+          const text = await el.textContent();
+          if (text && isValidDescription(text.trim())) {
+            permitData.description = text.trim();
+            break;
           }
         }
       } catch { continue; }
     }
 
-    // Method 2: Try finding by ID patterns for description
-    if (!permitData.description) {
-      const descSelectors = [
-        '[id*="txtDescription"]',
-        '[id*="lblDescription"]',
-        '[id*="WorkDescription"]',
-        '[id*="ProjectDescription"]',
-        '[id*="DescriptionOfWork"]',
-      ];
-      for (const selector of descSelectors) {
-        try {
-          const el = page.locator(selector).first();
-          if (await el.isVisible({ timeout: 500 })) {
-            const text = await el.textContent();
-            if (text && text.trim().length > 5) {
-              permitData.description = text.trim();
-              break;
-            }
-          }
-        } catch { continue; }
-      }
-    }
-
-    // Method 3: Search all table rows for description content
+    // Method 2: Look for Description of Work section and get text
     if (!permitData.description) {
       try {
-        const rows = await page.$$('tr');
+        const rows = await page.locator('tr').all();
         for (const row of rows) {
           const rowText = await row.textContent() || '';
           const rowLower = rowText.toLowerCase();
-          if (rowLower.includes('description of work') ||
-              rowLower.includes('project description') ||
-              rowLower.includes('work description')) {
-            const cells = await row.$$('td');
-            for (const cell of cells) {
-              const cellText = await cell.textContent() || '';
-              const trimmed = cellText.trim();
-              if (trimmed.length > 10 &&
-                  !trimmed.toLowerCase().includes('description') &&
-                  !trimmed.toLowerCase().includes('spell')) {
+          if (rowLower.includes('description of work') || rowLower.includes('project description')) {
+            const spans = await row.locator('span').all();
+            for (const span of spans) {
+              const spanText = await span.textContent() || '';
+              const trimmed = spanText.trim();
+              if (isValidDescription(trimmed)) {
                 permitData.description = trimmed;
                 break;
               }
@@ -660,7 +642,26 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
             if (permitData.description) break;
           }
         }
-      } catch { /* ignore */ }
+      } catch { /* continue */ }
+    }
+
+    // Method 3: Look for any description-like span by ID pattern
+    if (!permitData.description) {
+      try {
+        const spans = await page.locator('span[id*="lbl"], span[id*="txt"]').all();
+        for (const span of spans) {
+          const id = await span.getAttribute('id') || '';
+          const idLower = id.toLowerCase();
+          if ((idLower.includes('description') || idLower.includes('projectdesc')) &&
+              !idLower.includes('licensed') && !idLower.includes('professional')) {
+            const text = await span.textContent();
+            if (text && isValidDescription(text.trim())) {
+              permitData.description = text.trim();
+              break;
+            }
+          }
+        }
+      } catch { /* continue */ }
     }
 
     // Record/Permit Type
