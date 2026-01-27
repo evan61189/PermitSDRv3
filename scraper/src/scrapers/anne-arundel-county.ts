@@ -448,11 +448,18 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
         // Go back to results
         await page.goBack();
         await page.waitForLoadState('networkidle');
-        await page.waitForTimeout(1500);
+        await page.waitForTimeout(2000);
+
+        // Wait for results table to re-appear after navigation
+        try {
+          await page.waitForSelector('table tbody tr, .ACA_Grid tr, [id*="GridView"] tr', { timeout: 10000 });
+        } catch {
+          console.log(`[${JURISDICTION}] Results table not found after going back, refreshing search...`);
+        }
 
         // Scroll back to bottom where results are
         await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(1000);
 
       } catch (error) {
         console.error(`[${JURISDICTION}] Error processing permit ${permitNumber}:`, error);
@@ -495,54 +502,78 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
     date: '',
   };
 
+  // Helper function to check if text looks like JavaScript/HTML code
+  const isJavaScriptOrJunk = (text: string): boolean => {
+    const junkPatterns = [
+      'var ', 'function', 'searchWaterMark', '__doPostBack', 'window.',
+      'document.', 'ctl00', 'onclick', 'keydown', 'keyCode', '$(',
+      'getElementById', 'querySelector', '.click', '.value', 'return ',
+      'if(', 'if (', '&&', '||', '===', '!==', 'event', 'callee'
+    ];
+    const lowerText = text.toLowerCase();
+    return junkPatterns.some(pattern => text.includes(pattern) || lowerText.includes(pattern.toLowerCase()));
+  };
+
+  // Helper to validate address format (should look like a street address)
+  const isValidAddress = (text: string): boolean => {
+    if (!text || text.length < 5 || text.length > 200) return false;
+    if (isJavaScriptOrJunk(text)) return false;
+    const hasNumber = /\d/.test(text);
+    const hasLetter = /[a-zA-Z]/.test(text);
+    const addressWords = ['st', 'street', 'ave', 'avenue', 'rd', 'road', 'dr', 'drive', 'blvd', 'ln', 'lane', 'way', 'ct', 'court', 'pl', 'place', 'annapolis', 'glen burnie', 'severna', 'md'];
+    const lowerText = text.toLowerCase();
+    const hasAddressWord = addressWords.some(word => lowerText.includes(word));
+    return hasNumber && hasLetter && (hasAddressWord || text.includes(','));
+  };
+
   try {
     // Extract data using Accela-specific element selectors
-    // Work Location / Address - look for "Work Location" label first
-    const addressLabels = ['Work Location', 'Project Address', 'Address', 'Location'];
+    // Work Location / Address - first try specific ID selectors for the actual address value
+    const addressIdSelectors = [
+      '[id*="lblFullAddress"]',
+      '[id*="FullAddress"]:not([id*="Search"])',
+      '[id*="lblWorkLocation"]:not([id*="Search"])',
+      '[id*="txtFullAddress"]',
+      'span[id*="Address"][id*="lbl"]',
+    ];
 
-    for (const label of addressLabels) {
+    for (const selector of addressIdSelectors) {
       if (permitData.address) break;
-
       try {
-        const labelEl = page.locator(`span:has-text("${label}"), td:has-text("${label}")`).first();
-        if (await labelEl.isVisible({ timeout: 500 })) {
-          const parent = labelEl.locator('xpath=ancestor::tr').first();
-          if (await parent.isVisible({ timeout: 300 })) {
-            const cells = await parent.locator('td, span').all();
-            for (const cell of cells) {
-              const cellText = await cell.textContent() || '';
-              const trimmed = cellText.trim();
-              // Skip if it's the label itself or too short
-              if (trimmed.length > 5 &&
-                  !trimmed.toLowerCase().includes('location') &&
-                  !trimmed.toLowerCase().includes('address') &&
-                  !trimmed.toLowerCase().includes('work loc')) {
-                permitData.address = trimmed;
-                break;
-              }
-            }
+        const el = page.locator(selector).first();
+        if (await el.isVisible({ timeout: 500 })) {
+          const text = await el.textContent();
+          if (text && isValidAddress(text.trim())) {
+            permitData.address = text.trim();
+            break;
           }
         }
       } catch { continue; }
     }
 
-    // Fallback: Try finding by ID patterns for address
+    // Fallback: Label-based extraction for Work Location
     if (!permitData.address) {
-      const addressSelectors = [
-        '[id*="WorkLocation"]',
-        '[id*="lblAddress"]',
-        '[id*="txtAddress"]',
-        '[id*="FullAddress"]',
-        'span[id*="Address"]',
-      ];
-      for (const selector of addressSelectors) {
+      const addressLabels = ['Work Location', 'Project Address', 'Address', 'Location'];
+
+      for (const label of addressLabels) {
+        if (permitData.address) break;
+
         try {
-          const el = page.locator(selector).first();
-          if (await el.isVisible({ timeout: 500 })) {
-            const text = await el.textContent();
-            if (text && text.trim().length > 5 && !text.toLowerCase().includes('address')) {
-              permitData.address = text.trim();
-              break;
+          const labelEl = page.locator(`span:has-text("${label}"), td:has-text("${label}")`).first();
+          if (await labelEl.isVisible({ timeout: 500 })) {
+            const parent = labelEl.locator('xpath=ancestor::tr').first();
+            if (await parent.isVisible({ timeout: 300 })) {
+              const cells = await parent.locator('td, span').all();
+              for (const cell of cells) {
+                const cellText = await cell.textContent() || '';
+                const trimmed = cellText.trim();
+                if (isValidAddress(trimmed) &&
+                    !trimmed.toLowerCase().includes('location') &&
+                    !trimmed.toLowerCase().includes('work loc')) {
+                  permitData.address = trimmed;
+                  break;
+                }
+              }
             }
           }
         } catch { continue; }
