@@ -207,6 +207,10 @@ const INCLUDED_PERMIT_TYPES = [
 /**
  * Determines if a permit is relevant for Clipper Construction
  * (commercial general contractor)
+ *
+ * NOTE: This filter is intentionally lenient - we include permits when uncertain
+ * and let AI scoring determine final relevance. Better to include too many
+ * than miss potential opportunities.
  */
 export function isRelevantForClipperConstruction(
   description: string,
@@ -217,6 +221,13 @@ export function isRelevantForClipperConstruction(
   const permitTypeLower = (permitType || '').toLowerCase();
   const combinedText = `${descLower} ${permitTypeLower}`;
 
+  // If we have very little data, include the permit for AI scoring
+  // This ensures permits with extraction issues still get processed
+  if (descLower.length < 10 && permitTypeLower.length < 5) {
+    console.log(`[permit-filter] Including permit due to limited data - will let AI score determine relevance`);
+    return true;
+  }
+
   // First check: Exclude residential project types
   if (projectType === 'residential_new' || projectType === 'residential_renovation') {
     // Unless it's multi-family (apartments, condos)
@@ -225,26 +236,35 @@ export function isRelevantForClipperConstruction(
     }
   }
 
-  // Check for excluded keywords (single trade, fire alarm, etc.)
+  // Check for strongly excluded keywords (single trade, fire alarm, etc.)
+  let hasExcludedKeyword = false;
   for (const keyword of EXCLUDED_KEYWORDS) {
     if (combinedText.includes(keyword.toLowerCase())) {
       // Check if there are also included keywords that override
       const hasIncludedKeyword = INCLUDED_KEYWORDS.some(inc => combinedText.includes(inc.toLowerCase()));
       if (!hasIncludedKeyword) {
-        return false;
+        hasExcludedKeyword = true;
+        break;
       }
     }
   }
 
   // Check for excluded permit types
+  let hasExcludedPermitType = false;
   for (const excludedType of EXCLUDED_PERMIT_TYPES) {
     if (permitTypeLower.includes(excludedType.toLowerCase())) {
       // If the permit type is specifically one of these, check if description indicates broader scope
       const hasBroaderScope = INCLUDED_KEYWORDS.some(inc => descLower.includes(inc.toLowerCase()));
       if (!hasBroaderScope) {
-        return false;
+        hasExcludedPermitType = true;
+        break;
       }
     }
+  }
+
+  // If both exclusions apply, definitely exclude
+  if (hasExcludedKeyword && hasExcludedPermitType) {
+    return false;
   }
 
   // Check for included keywords - these are positive signals
@@ -273,8 +293,15 @@ export function isRelevantForClipperConstruction(
     return true;
   }
 
-  // Default to false if we can't determine relevance
-  return false;
+  // NEW: If project type is 'other' and no strong exclusions, include for AI scoring
+  // This catches permits where we couldn't classify but might still be relevant
+  if (projectType === 'other' && !hasExcludedKeyword && !hasExcludedPermitType) {
+    console.log(`[permit-filter] Including unclassified permit for AI scoring`);
+    return true;
+  }
+
+  // Default to false only if we have strong exclusion signals
+  return !hasExcludedKeyword;
 }
 
 /**
