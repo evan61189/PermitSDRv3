@@ -1,5 +1,14 @@
 // Shared types for Permit SDR Platform - Clipper Construction
 
+export type PipelineStage =
+  | 'lead'
+  | 'researching'
+  | 'contact_made'
+  | 'meeting_booked'
+  | 'not_interested'
+  | 'won'
+  | 'lost';
+
 export interface Permit {
   id: string;
   permit_number: string;
@@ -26,6 +35,7 @@ export interface Permit {
   detail_url?: string;
   latitude?: number;
   longitude?: number;
+  pipeline_stage?: PipelineStage;
   created_at: string;
   updated_at: string;
 }
@@ -99,6 +109,19 @@ export const OPPORTUNITY_RATING_CONFIG: Record<
   warm: { label: 'Warm', color: '#f59e0b', bgColor: '#fffbeb' },
   cold: { label: 'Cold', color: '#3b82f6', bgColor: '#eff6ff' },
   not_relevant: { label: 'Not Relevant', color: '#6b7280', bgColor: '#f9fafb' },
+};
+
+export const PIPELINE_STAGE_CONFIG: Record<
+  PipelineStage,
+  { label: string; color: string; bgColor: string; order: number }
+> = {
+  lead: { label: 'Lead', color: '#6366f1', bgColor: '#eef2ff', order: 1 },
+  researching: { label: 'Researching', color: '#8b5cf6', bgColor: '#f5f3ff', order: 2 },
+  contact_made: { label: 'Contact Made', color: '#f59e0b', bgColor: '#fffbeb', order: 3 },
+  meeting_booked: { label: 'Meeting Booked', color: '#10b981', bgColor: '#ecfdf5', order: 4 },
+  not_interested: { label: 'Not Interested', color: '#6b7280', bgColor: '#f9fafb', order: 5 },
+  won: { label: 'Won', color: '#22c55e', bgColor: '#f0fdf4', order: 6 },
+  lost: { label: 'Lost', color: '#ef4444', bgColor: '#fef2f2', order: 7 },
 };
 
 export interface ScraperResult {

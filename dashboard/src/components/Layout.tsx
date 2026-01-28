@@ -1,9 +1,10 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, FileText, Ship } from 'lucide-react';
+import { LayoutDashboard, FileText, Ship, Kanban } from 'lucide-react';
 import clsx from 'clsx';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { name: 'Pipeline', href: '/pipeline', icon: Kanban },
   { name: 'Permits', href: '/permits', icon: FileText },
 ];
 
