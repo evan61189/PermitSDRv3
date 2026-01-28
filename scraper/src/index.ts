@@ -5,10 +5,33 @@ import { upsertPermits, getUnscorredPermits, saveAIScore, saveExtractedScores } 
 import { scorePermit } from './utils/ai-scorer.js';
 import type { Jurisdiction } from './types/index.js';
 
+export interface DateRange {
+  startDate: Date;
+  endDate: Date;
+}
+
+function parseDateArg(arg: string | undefined): Date | undefined {
+  if (!arg) return undefined;
+  const date = new Date(arg);
+  return isNaN(date.getTime()) ? undefined : date;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const jurisdictionArg = args.find((arg) => arg.startsWith('--jurisdiction='));
   const jurisdiction = jurisdictionArg?.split('=')[1] as Jurisdiction | undefined;
+
+  const startDateArg = args.find((arg) => arg.startsWith('--start-date='));
+  const endDateArg = args.find((arg) => arg.startsWith('--end-date='));
+  const startDate = parseDateArg(startDateArg?.split('=')[1]);
+  const endDate = parseDateArg(endDateArg?.split('=')[1]);
+
+  // Build date range config (if dates provided)
+  let dateRange: DateRange | undefined;
+  if (startDate && endDate) {
+    dateRange = { startDate, endDate };
+    console.log(`Using custom date range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+  }
 
   const shouldScore = args.includes('--score');
   const scoreOnly = args.includes('--score-only');
@@ -22,7 +45,7 @@ async function main() {
       // Run scrapers
       if (jurisdiction && scrapers[jurisdiction]) {
         console.log(`Running scraper for: ${jurisdiction}`);
-        const result = await scrapers[jurisdiction]();
+        const result = await scrapers[jurisdiction](dateRange);
 
         if (result.success && result.permits.length > 0) {
           console.log(`\nSaving ${result.permits.length} permits to database...`);
@@ -47,7 +70,7 @@ async function main() {
       } else {
         // Run all scrapers
         console.log('Running all scrapers...\n');
-        const results = await scrapeAll();
+        const results = await scrapeAll(dateRange);
 
         let totalPermits = 0;
         const allSaved: any[] = [];

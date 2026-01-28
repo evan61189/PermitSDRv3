@@ -87,17 +87,43 @@ export async function upsertPermits(permits: Omit<Permit, 'id' | 'created_at' | 
   const geocodedCount = geocodedPermits.filter(p => p.latitude && p.longitude).length;
   console.log(`[supabase] Geocoded ${geocodedCount}/${geocodedPermits.length} permits`);
 
+  // Map permits to only include scraper-managed fields
+  // This preserves user-managed fields like project_contact and pipeline_stage
+  const permitsForUpsert = geocodedPermits.map((p) => ({
+    permit_number: p.permit_number,
+    description: p.description,
+    address: p.address,
+    city: p.city,
+    county: p.county,
+    state: p.state,
+    zip_code: p.zip_code,
+    project_type: p.project_type,
+    permit_type: p.permit_type,
+    status: p.status,
+    applicant_name: p.applicant_name,
+    contractor_name: p.contractor_name,
+    estimated_value: p.estimated_value,
+    square_footage: p.square_footage,
+    submission_date: p.submission_date,
+    issue_date: p.issue_date,
+    expiration_date: p.expiration_date,
+    source_url: p.source_url,
+    source_jurisdiction: p.source_jurisdiction,
+    raw_data: p.raw_data,
+    screenshot_url: p.screenshot_url,
+    detail_url: p.detail_url,
+    latitude: p.latitude,
+    longitude: p.longitude,
+    // NOTE: Intentionally NOT including project_contact and pipeline_stage
+    // These are user-managed fields that should be preserved on update
+    updated_at: new Date().toISOString(),
+  }));
+
   const { data, error } = await supabase
     .from('permits')
-    .upsert(
-      geocodedPermits.map((p) => ({
-        ...p,
-        updated_at: new Date().toISOString(),
-      })),
-      {
-        onConflict: 'permit_number,source_jurisdiction',
-      }
-    )
+    .upsert(permitsForUpsert, {
+      onConflict: 'permit_number,source_jurisdiction',
+    })
     .select();
 
   if (error) {

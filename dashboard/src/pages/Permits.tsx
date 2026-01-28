@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, ChevronLeft, ChevronRight, Play, Loader2, Trash2 } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Play, Loader2, Calendar } from 'lucide-react';
 import PermitCard from '../components/PermitCard';
-import { usePermits, useDeleteAllPermits, type PermitFilters } from '../hooks/usePermits';
+import { usePermits, type PermitFilters } from '../hooks/usePermits';
 import {
   JURISDICTION_NAMES,
   PROJECT_TYPE_NAMES,
@@ -51,14 +51,26 @@ export default function Permits() {
   const [searchInput, setSearchInput] = useState(filters.search || '');
   const [scraperStatus, setScraperStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [scraperMessage, setScraperMessage] = useState('');
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showScraperModal, setShowScraperModal] = useState(false);
+
+  // Date range state for scraper - default to last 7 days
+  const getDefaultDates = () => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 7);
+    return {
+      start: start.toISOString().split('T')[0],
+      end: end.toISOString().split('T')[0],
+    };
+  };
+  const [dateRange, setDateRange] = useState(getDefaultDates);
 
   const { data, isLoading, error } = usePermits(filters);
-  const deleteAllPermits = useDeleteAllPermits();
 
   const triggerScraper = async () => {
     setScraperStatus('loading');
     setScraperMessage('');
+    setShowScraperModal(false);
 
     try {
       const response = await fetch('/.netlify/functions/trigger-scraper', {
@@ -68,14 +80,16 @@ export default function Permits() {
         },
         body: JSON.stringify({
           runScoring: true,
+          startDate: dateRange.start,
+          endDate: dateRange.end,
         }),
       });
 
-      const data = await response.json();
+      const result = await response.json();
 
-      if (response.ok && data.success) {
+      if (response.ok && result.success) {
         setScraperStatus('success');
-        setScraperMessage('Scraper triggered! Check back in a few minutes for new permits.');
+        setScraperMessage(`Scraper triggered for ${dateRange.start} to ${dateRange.end}! Check back in a few minutes.`);
         // Reset status after 5 seconds
         setTimeout(() => {
           setScraperStatus('idle');
@@ -83,7 +97,7 @@ export default function Permits() {
         }, 5000);
       } else {
         setScraperStatus('error');
-        setScraperMessage(data.message || data.error || 'Failed to trigger scraper');
+        setScraperMessage(result.message || result.error || 'Failed to trigger scraper');
       }
     } catch (err) {
       setScraperStatus('error');
@@ -128,15 +142,6 @@ export default function Permits() {
     setSearchParams({}, { replace: true });
   };
 
-  const handleDeleteAll = async () => {
-    try {
-      await deleteAllPermits.mutateAsync();
-      setShowDeleteConfirm(false);
-    } catch (err) {
-      console.error('Failed to delete permits:', err);
-    }
-  };
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -154,28 +159,16 @@ export default function Permits() {
             </span>
           )}
           <button
-            onClick={() => setShowDeleteConfirm(true)}
-            disabled={deleteAllPermits.isPending || (data?.count === 0)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {deleteAllPermits.isPending ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Trash2 className="w-4 h-4" />
-            )}
-            {deleteAllPermits.isPending ? 'Deleting...' : 'Clear All'}
-          </button>
-          <button
-            onClick={triggerScraper}
+            onClick={() => setShowScraperModal(true)}
             disabled={scraperStatus === 'loading'}
             className="inline-flex items-center gap-2 px-4 py-2 bg-clipper-gold text-clipper-navy font-semibold rounded-lg hover:bg-clipper-gold-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {scraperStatus === 'loading' ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <Play className="w-4 h-4" />
+              <Calendar className="w-4 h-4" />
             )}
-            {scraperStatus === 'loading' ? 'Triggering...' : 'Run Scraper'}
+            {scraperStatus === 'loading' ? 'Running...' : 'Run Scraper'}
           </button>
         </div>
       </div>
@@ -441,45 +434,61 @@ export default function Permits() {
         </>
       )}
 
-      {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && (
+      {/* Scraper Date Range Modal */}
+      {showScraperModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Delete All Permits?
+              Run Permit Scraper
             </h3>
-            <p className="text-gray-600 mb-6">
-              This will permanently delete all {data?.count || 0} permits and their AI scores from the database. This action cannot be undone.
+            <p className="text-gray-600 mb-4">
+              Select a date range to scrape permits. The scraper will search for permits filed within this range.
             </p>
-            {deleteAllPermits.isError && (
-              <p className="text-red-600 text-sm mb-4">
-                Error: {deleteAllPermits.error?.message || 'Failed to delete permits'}
-              </p>
-            )}
+
+            <div className="space-y-4 mb-6">
+              <div>
+                <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 mb-1">
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  id="startDate"
+                  value={dateRange.start}
+                  onChange={(e) => setDateRange((prev) => ({ ...prev, start: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 mb-1">
+                  End Date
+                </label>
+                <input
+                  type="date"
+                  id="endDate"
+                  value={dateRange.end}
+                  onChange={(e) => setDateRange((prev) => ({ ...prev, end: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <p className="text-sm text-gray-500 mb-4">
+              Note: Permits already in the database will be updated. New permits will be added and scored.
+            </p>
+
             <div className="flex justify-end gap-3">
               <button
-                onClick={() => setShowDeleteConfirm(false)}
-                disabled={deleteAllPermits.isPending}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                onClick={() => setShowScraperModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={handleDeleteAll}
-                disabled={deleteAllPermits.isPending}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+                onClick={triggerScraper}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-clipper-gold text-clipper-navy font-semibold rounded-lg hover:bg-clipper-gold-dark transition-colors"
               >
-                {deleteAllPermits.isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Deleting...
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="w-4 h-4" />
-                    Delete All
-                  </>
-                )}
+                <Play className="w-4 h-4" />
+                Start Scraper
               </button>
             </div>
           </div>

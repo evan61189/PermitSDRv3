@@ -27,12 +27,16 @@ export const handler: Handler = async (event) => {
   // Parse request body for optional parameters
   let jurisdiction = '';
   let runScoring = true;
+  let startDate = '';
+  let endDate = '';
 
   try {
     if (event.body) {
       const body = JSON.parse(event.body);
       jurisdiction = body.jurisdiction || '';
       runScoring = body.runScoring !== false;
+      startDate = body.startDate || '';
+      endDate = body.endDate || '';
     }
   } catch {
     // Ignore parse errors, use defaults
@@ -54,6 +58,8 @@ export const handler: Handler = async (event) => {
           inputs: {
             jurisdiction: jurisdiction,
             run_scoring: String(runScoring),
+            start_date: startDate,
+            end_date: endDate,
           },
         }),
       }

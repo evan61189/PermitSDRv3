@@ -2,6 +2,7 @@ import { Page } from 'playwright';
 import { getPage } from '../utils/browser.js';
 import { extractAndScorePermit, AIExtractedPermit } from '../utils/ai-scorer.js';
 import type { Permit, ScraperResult, Jurisdiction } from '../types/index.js';
+import type { DateRange } from './index.js';
 
 const JURISDICTION: Jurisdiction = 'howard_county_md';
 const BASE_URL = 'https://dilp.howardcountymd.gov/CitizenAccess/Cap/CapHome.aspx?module=Building&TabName=HOME';
@@ -16,6 +17,9 @@ const PERMIT_TYPES_TO_SEARCH = [
   'Commercial Addition',
 ];
 
+// Default date range is last 3 days
+const DEFAULT_DATE_RANGE_DAYS = 3;
+
 interface PermitData {
   recordNumber: string;
   detailUrl?: string;
@@ -23,7 +27,7 @@ interface PermitData {
   aiData?: AIExtractedPermit;
 }
 
-export async function scrapeHowardCounty(): Promise<ScraperResult> {
+export async function scrapeHowardCounty(dateRange?: DateRange): Promise<ScraperResult> {
   console.log(`[${JURISDICTION}] Starting scrape...`);
   const permits: Omit<Permit, 'id' | 'created_at' | 'updated_at'>[] = [];
   const seenPermitNumbers = new Set<string>();
@@ -54,10 +58,18 @@ export async function scrapeHowardCounty(): Promise<ScraperResult> {
           continue;
         }
 
-        // Step 3: Enter date range (last 3 days)
-        const endDate = new Date();
-        const startDate = new Date();
-        startDate.setDate(startDate.getDate() - 3);
+        // Step 3: Enter date range (use custom range or default to last 3 days)
+        let startDate: Date;
+        let endDate: Date;
+        if (dateRange) {
+          startDate = dateRange.startDate;
+          endDate = dateRange.endDate;
+        } else {
+          endDate = new Date();
+          startDate = new Date();
+          startDate.setDate(startDate.getDate() - DEFAULT_DATE_RANGE_DAYS);
+        }
+        console.log(`[${JURISDICTION}] Searching date range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
         await enterDateRange(page, startDate, endDate);
 
         // Step 4: Click search button (bottom left)
