@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -7,16 +8,23 @@ import {
   User,
   ExternalLink,
   Lightbulb,
+  Phone,
+  Edit2,
+  Check,
+  X,
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { usePermit } from '../hooks/usePermits';
+import { usePermit, useUpdateProjectContact } from '../hooks/usePermits';
 import OpportunityBadge from '../components/OpportunityBadge';
 import ScoreGauge from '../components/ScoreGauge';
-import { PROJECT_TYPE_NAMES, JURISDICTION_NAMES } from '../types';
+import { PROJECT_TYPE_NAMES, JURISDICTION_NAMES, PIPELINE_STAGE_CONFIG } from '../types';
 
 export default function PermitDetail() {
   const { id } = useParams<{ id: string }>();
   const { data: permit, isLoading, error } = usePermit(id!);
+  const updateContact = useUpdateProjectContact();
+  const [isEditingContact, setIsEditingContact] = useState(false);
+  const [contactValue, setContactValue] = useState('');
 
   if (isLoading) {
     return (
@@ -123,6 +131,86 @@ export default function PermitDetail() {
               <div className="font-medium">{permit.applicant_name || 'N/A'}</div>
             </div>
           </div>
+        </div>
+
+        {/* Project Contact Section */}
+        <div className="mt-6 pt-4 border-t border-gray-100">
+          <div className="flex items-start gap-3">
+            <Phone className="w-5 h-5 text-gray-400 mt-0.5" />
+            <div className="flex-1">
+              <div className="text-sm text-gray-500 mb-1">Project Contact</div>
+              {isEditingContact ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={contactValue}
+                    onChange={(e) => setContactValue(e.target.value)}
+                    placeholder="Enter contact name, phone, or email"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-clipper-gold focus:border-clipper-gold"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        updateContact.mutate({ permitId: permit.id, contact: contactValue });
+                        setIsEditingContact(false);
+                      }
+                      if (e.key === 'Escape') {
+                        setContactValue(permit.project_contact || '');
+                        setIsEditingContact(false);
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      updateContact.mutate({ permitId: permit.id, contact: contactValue });
+                      setIsEditingContact(false);
+                    }}
+                    className="p-2 text-green-600 hover:bg-green-50 rounded-md"
+                  >
+                    <Check className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setContactValue(permit.project_contact || '');
+                      setIsEditingContact(false);
+                    }}
+                    className="p-2 text-gray-400 hover:bg-gray-50 rounded-md"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">
+                    {permit.project_contact || 'No contact added'}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setContactValue(permit.project_contact || '');
+                      setIsEditingContact(true);
+                    }}
+                    className="p-1 text-gray-400 hover:text-clipper-navy hover:bg-gray-100 rounded"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Pipeline Stage */}
+          {permit.pipeline_stage && (
+            <div className="flex items-center gap-3 mt-4">
+              <div
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: PIPELINE_STAGE_CONFIG[permit.pipeline_stage]?.color }}
+              />
+              <span className="text-sm text-gray-500">
+                Pipeline Stage: <span className="font-medium text-gray-700">
+                  {PIPELINE_STAGE_CONFIG[permit.pipeline_stage]?.label}
+                </span>
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="mt-4 pt-4 border-t border-gray-100">
