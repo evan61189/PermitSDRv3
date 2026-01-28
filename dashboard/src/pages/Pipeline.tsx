@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Calendar, ChevronDown, GripVertical, Building2, MapPin, DollarSign, User, X, Check } from 'lucide-react';
+import { Calendar, ChevronDown, GripVertical, Building2, MapPin, User, X, Check } from 'lucide-react';
 import {
   DndContext,
   DragOverlay,
@@ -43,28 +43,28 @@ function PipelineColumn({ stage, permits, onUpdateContact }: PipelineColumnProps
   return (
     <div
       ref={setNodeRef}
-      className={`flex flex-col min-w-[280px] max-w-[320px] bg-gray-50 rounded-lg transition-all ${
+      className={`flex flex-col flex-1 min-w-0 bg-gray-50 rounded-lg transition-all ${
         isOver ? 'ring-2 ring-clipper-gold bg-clipper-gold/10' : ''
       }`}
     >
       {/* Column Header */}
-      <div className="p-3 border-b border-gray-200">
+      <div className="p-2 border-b border-gray-200">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <div
-              className="w-3 h-3 rounded-full"
+              className="w-2.5 h-2.5 rounded-full"
               style={{ backgroundColor: config.color }}
             />
-            <h3 className="font-semibold text-gray-900">{config.label}</h3>
+            <h3 className="font-semibold text-gray-900 text-sm">{config.label}</h3>
           </div>
-          <span className="text-sm text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">
+          <span className="text-xs text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded-full">
             {permits.length}
           </span>
         </div>
       </div>
 
       {/* Cards */}
-      <div className="flex-1 p-2 space-y-2 overflow-y-auto max-h-[calc(100vh-320px)]">
+      <div className="flex-1 p-1.5 space-y-1.5 overflow-y-auto">
         {permits.map((permit) => (
           <DraggablePipelineCard
             key={permit.id}
@@ -147,65 +147,57 @@ function PipelineCard({ permit, onUpdateContact, dragHandleProps, isDragOverlay 
 
   return (
     <div
-      className={`bg-white rounded-lg border border-gray-200 p-3 hover:shadow-md transition-all select-none ${
+      className={`bg-white rounded border border-gray-200 p-2 hover:shadow-md transition-all select-none ${
         isDragOverlay ? 'shadow-xl ring-2 ring-clipper-gold rotate-2' : ''
       }`}
     >
-      <div className="flex items-start gap-2">
+      <div className="flex items-start gap-1.5">
         <div
           {...dragHandleProps}
           className="cursor-grab active:cursor-grabbing touch-none"
         >
-          <GripVertical className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+          <GripVertical className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
         </div>
         <div className="flex-1 min-w-0">
           {/* Permit Number & Rating */}
-          <div className="flex items-center justify-between gap-2 mb-1">
+          <div className="flex items-center justify-between gap-1 mb-0.5">
             <Link
               to={`/permits/${permit.id}`}
-              className="font-medium text-clipper-navy hover:text-clipper-gold text-sm truncate"
+              className="font-medium text-clipper-navy hover:text-clipper-gold text-xs truncate"
             >
               {permit.permit_number}
             </Link>
             {permit.opportunity_rating && (
               <span
-                className={`px-1.5 py-0.5 rounded text-xs font-medium capitalize ${ratingColors.bg} ${ratingColors.text}`}
+                className={`px-1 py-0.5 rounded text-[10px] font-medium capitalize ${ratingColors.bg} ${ratingColors.text}`}
               >
-                {permit.opportunity_rating.replace('_', ' ')}
+                {permit.opportunity_rating}
               </span>
             )}
           </div>
 
           {/* Address */}
-          <div className="flex items-center gap-1 text-xs text-gray-500 mb-1">
-            <MapPin className="w-3 h-3 flex-shrink-0" />
+          <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-0.5">
+            <MapPin className="w-2.5 h-2.5 flex-shrink-0" />
             <span className="truncate">{permit.address}, {permit.city}</span>
           </div>
 
-          {/* Project Type & Value */}
-          <div className="flex items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-1 text-gray-500">
-              <Building2 className="w-3 h-3" />
-              <span className="truncate">{permit.project_type?.replace('_', ' ')}</span>
-            </div>
-            {permit.estimated_value && (
-              <div className="flex items-center gap-1 text-gray-600 font-medium">
-                <DollarSign className="w-3 h-3" />
-                {(permit.estimated_value / 1000).toFixed(0)}K
-              </div>
-            )}
+          {/* Project Type */}
+          <div className="flex items-center gap-1 text-[11px] text-gray-500">
+            <Building2 className="w-2.5 h-2.5" />
+            <span className="truncate">{permit.project_type?.replace('_', ' ')}</span>
           </div>
 
           {/* Project Contact */}
-          <div className="mt-2 pt-2 border-t border-gray-100">
+          <div className="mt-1.5 pt-1.5 border-t border-gray-100">
             {isEditingContact ? (
               <div className="flex items-center gap-1">
                 <input
                   type="text"
                   value={contactValue}
                   onChange={(e) => setContactValue(e.target.value)}
-                  placeholder="Contact name/info"
-                  className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-clipper-gold focus:border-clipper-gold"
+                  placeholder="Contact info"
+                  className="flex-1 px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:ring-1 focus:ring-clipper-gold focus:border-clipper-gold"
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleSaveContact();
@@ -214,13 +206,13 @@ function PipelineCard({ permit, onUpdateContact, dragHandleProps, isDragOverlay 
                 />
                 <button
                   onClick={handleSaveContact}
-                  className="p-1 text-green-600 hover:bg-green-50 rounded"
+                  className="p-0.5 text-green-600 hover:bg-green-50 rounded"
                 >
                   <Check className="w-3 h-3" />
                 </button>
                 <button
                   onClick={handleCancelContact}
-                  className="p-1 text-gray-400 hover:bg-gray-50 rounded"
+                  className="p-0.5 text-gray-400 hover:bg-gray-50 rounded"
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -228,9 +220,9 @@ function PipelineCard({ permit, onUpdateContact, dragHandleProps, isDragOverlay 
             ) : (
               <button
                 onClick={() => setIsEditingContact(true)}
-                className="flex items-center gap-1 text-xs text-gray-500 hover:text-clipper-navy w-full text-left"
+                className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-clipper-navy w-full text-left"
               >
-                <User className="w-3 h-3 flex-shrink-0" />
+                <User className="w-2.5 h-2.5 flex-shrink-0" />
                 <span className="truncate">
                   {permit.project_contact || 'Add contact...'}
                 </span>
@@ -238,16 +230,16 @@ function PipelineCard({ permit, onUpdateContact, dragHandleProps, isDragOverlay 
             )}
           </div>
 
-          {/* Score */}
+          {/* Score bar */}
           {permit.overall_score !== null && (
-            <div className="mt-2 flex items-center gap-2">
-              <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+            <div className="mt-1 flex items-center gap-1">
+              <div className="flex-1 h-1 bg-gray-200 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-clipper-gold rounded-full"
                   style={{ width: `${permit.overall_score}%` }}
                 />
               </div>
-              <span className="text-xs font-medium text-gray-600">{permit.overall_score}</span>
+              <span className="text-[10px] font-medium text-gray-500">{permit.overall_score}</span>
             </div>
           )}
         </div>
@@ -302,32 +294,13 @@ export default function Pipeline() {
     updateContact.mutate({ permitId, contact });
   };
 
-  // Active pipeline stages (main workflow)
-  const activeStages: PipelineStage[] = ['lead', 'researching', 'contact_made', 'meeting_booked'];
-  // Outcome stages (end states)
-  const outcomeStages: PipelineStage[] = ['not_interested', 'won', 'lost'];
+  // Pipeline stages
+  const pipelineStages: PipelineStage[] = ['lead', 'researching', 'contact_made', 'meeting_booked', 'not_interested'];
 
-  // Calculate totals (excluding outcome stages)
-  const totals = useMemo(() => {
-    if (!permitsByStage) return { count: 0, value: 0, wonCount: 0, wonValue: 0 };
-    let count = 0;
-    let value = 0;
-    let wonCount = 0;
-    let wonValue = 0;
-
-    for (const [stage, permits] of Object.entries(permitsByStage)) {
-      for (const permit of permits) {
-        if (stage === 'won') {
-          wonCount++;
-          wonValue += permit.estimated_value || 0;
-        }
-        if (!['not_interested', 'won', 'lost'].includes(stage)) {
-          count++;
-          value += permit.estimated_value || 0;
-        }
-      }
-    }
-    return { count, value, wonCount, wonValue };
+  // Calculate total count
+  const totalCount = useMemo(() => {
+    if (!permitsByStage) return 0;
+    return pipelineStages.reduce((sum, stage) => sum + (permitsByStage[stage]?.length || 0), 0);
   }, [permitsByStage]);
 
   return (
@@ -416,30 +389,23 @@ export default function Pipeline() {
         </div>
 
         {/* Stats Bar */}
-        <div className="flex items-center gap-6 p-4 bg-white rounded-lg border border-gray-200">
+        <div className="flex items-center gap-6 p-3 bg-white rounded-lg border border-gray-200">
           <div>
-            <p className="text-sm text-gray-500">Active Opportunities</p>
-            <p className="text-2xl font-bold text-clipper-navy">{totals.count}</p>
+            <p className="text-sm text-gray-500">Total Opportunities</p>
+            <p className="text-xl font-bold text-clipper-navy">{totalCount}</p>
           </div>
-          <div className="h-10 w-px bg-gray-200" />
-          <div>
-            <p className="text-sm text-gray-500">Pipeline Value</p>
-            <p className="text-2xl font-bold text-clipper-gold">
-              ${(totals.value / 1000000).toFixed(1)}M
-            </p>
-          </div>
-          <div className="h-10 w-px bg-gray-200" />
-          <div>
-            <p className="text-sm text-gray-500">Won Deals</p>
-            <p className="text-2xl font-bold text-green-600">{totals.wonCount}</p>
-          </div>
-          <div className="h-10 w-px bg-gray-200" />
-          <div>
-            <p className="text-sm text-gray-500">Won Value</p>
-            <p className="text-2xl font-bold text-green-600">
-              ${(totals.wonValue / 1000000).toFixed(1)}M
-            </p>
-          </div>
+          {pipelineStages.map((stage) => (
+            <div key={stage} className="flex items-center gap-2">
+              <div className="h-8 w-px bg-gray-200" />
+              <div
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: PIPELINE_STAGE_CONFIG[stage].color }}
+              />
+              <span className="text-sm text-gray-600">
+                {PIPELINE_STAGE_CONFIG[stage].label}: <span className="font-semibold">{permitsByStage?.[stage]?.length || 0}</span>
+              </span>
+            </div>
+          ))}
         </div>
 
         {/* Pipeline Board */}
@@ -448,36 +414,15 @@ export default function Pipeline() {
             <div className="text-gray-500">Loading pipeline...</div>
           </div>
         ) : (
-          <div className="space-y-6">
-            {/* Active Pipeline Stages */}
-            <div>
-              <h2 className="text-sm font-medium text-gray-500 mb-3 uppercase tracking-wide">Active Pipeline</h2>
-              <div className="flex gap-4 overflow-x-auto pb-4">
-                {activeStages.map((stage) => (
-                  <PipelineColumn
-                    key={stage}
-                    stage={stage}
-                    permits={permitsByStage?.[stage] || []}
-                    onUpdateContact={handleUpdateContact}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* Outcome Stages */}
-            <div>
-              <h2 className="text-sm font-medium text-gray-500 mb-3 uppercase tracking-wide">Outcomes</h2>
-              <div className="flex gap-4 overflow-x-auto pb-4">
-                {outcomeStages.map((stage) => (
-                  <PipelineColumn
-                    key={stage}
-                    stage={stage}
-                    permits={permitsByStage?.[stage] || []}
-                    onUpdateContact={handleUpdateContact}
-                  />
-                ))}
-              </div>
-            </div>
+          <div className="flex gap-3 h-[calc(100vh-240px)]">
+            {pipelineStages.map((stage) => (
+              <PipelineColumn
+                key={stage}
+                stage={stage}
+                permits={permitsByStage?.[stage] || []}
+                onUpdateContact={handleUpdateContact}
+              />
+            ))}
           </div>
         )}
       </div>
