@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, FileText, Ship, Kanban } from 'lucide-react';
+import { LayoutDashboard, FileText, Kanban } from 'lucide-react';
 import clsx from 'clsx';
 
 const navigation = [
@@ -19,13 +19,11 @@ export default function Layout() {
           {/* Logo */}
           <div className="flex items-center h-20 px-6 border-b border-clipper-navy-light">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-clipper-gold rounded-lg flex items-center justify-center">
-                <Ship className="w-6 h-6 text-clipper-navy" />
-              </div>
-              <div>
-                <span className="text-lg font-bold text-white">Clipper</span>
-                <span className="block text-xs text-clipper-gold">Construction</span>
-              </div>
+              <img
+                src="/clipper-logo.png"
+                alt="Clipper Construction"
+                className="h-12 w-auto"
+              />
             </div>
           </div>
 
