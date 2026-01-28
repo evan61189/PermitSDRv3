@@ -1,6 +1,6 @@
 import { Page } from 'playwright';
 import { getPage } from '../utils/browser.js';
-import { classifyProjectType, isRelevantForClipperConstruction } from '../utils/permit-filter.js';
+import { extractAndScorePermit, AIExtractedPermit } from '../utils/ai-scorer.js';
 import type { Permit, ScraperResult, Jurisdiction } from '../types/index.js';
 
 const JURISDICTION: Jurisdiction = 'baltimore_city_md';
@@ -10,13 +10,9 @@ const RECORD_TYPE_TO_SELECT = 'Commercial and Multifamily Combo Permit';
 
 interface PermitData {
   recordNumber: string;
-  recordType: string;
-  description: string;
-  address: string;
-  status: string;
-  date: string;
-  applicantName?: string;
   detailUrl?: string;
+  pageText: string;
+  aiData?: AIExtractedPermit;
 }
 
 export async function scrapeBaltimoreCityMD(): Promise<ScraperResult> {
@@ -50,16 +46,16 @@ export async function scrapeBaltimoreCityMD(): Promise<ScraperResult> {
 
     // Step 5-7: Loop through results, click each permit, capture details, go back
     const rawPermits = await processPermitResults(page);
-    console.log(`[${JURISDICTION}] Found ${rawPermits.length} permits`);
+    console.log(`[${JURISDICTION}] Found ${rawPermits.length} permits to process with AI`);
 
-    // Transform permits - include ALL since they're already filtered by BCCM prefix
-    // Let AI scoring determine relevance instead of pre-filtering
+    // Use AI to extract and score each permit
     for (const raw of rawPermits) {
-      console.log(`[${JURISDICTION}] Raw permit data:`, JSON.stringify(raw, null, 2));
-      const permit = transformPermit(raw);
-      if (permit) {
-        permits.push(permit);
-        console.log(`[${JURISDICTION}] Added permit: ${permit.permit_number}`);
+      if (raw.aiData) {
+        const permit = transformPermit(raw);
+        if (permit) {
+          permits.push(permit);
+          console.log(`[${JURISDICTION}] Added permit: ${permit.permit_number} (Score: ${raw.aiData.overallScore}, Rating: ${raw.aiData.opportunityRating})`);
+        }
       }
     }
 
@@ -487,110 +483,59 @@ async function checkAndClickNextPage(_page: Page): Promise<boolean> {
 async function extractPermitDetails(page: Page, permitNumber: string): Promise<PermitData> {
   const permitData: PermitData = {
     recordNumber: permitNumber,
-    recordType: '',
-    description: '',
-    address: '',
-    status: '',
-    date: '',
+    pageText: '',
   };
 
   try {
-    // Get full page text for parsing
+    // Get full page text - let AI extract all the relevant data
     const pageText = await page.evaluate(() => document.body.innerText);
-    console.log(`[baltimore_city_md] Page text length: ${pageText.length}`);
+    permitData.pageText = pageText;
+    console.log(`[${JURISDICTION}] Got page text (${pageText.length} chars) for ${permitNumber}`);
 
-    // === ADDRESS EXTRACTION (from page text) ===
-    // Look for address pattern after "Work Location" section
-    const workLocationMatch = pageText.match(/Work Location[\s\S]*?(\d+[^]*?(?:MD|Maryland)\s*\d{5}(?:-\d{4})?)/i);
-    if (workLocationMatch) {
-      const rawAddress = workLocationMatch[1];
-      const addressMatch = rawAddress.match(/(\d+\s+[A-Za-z0-9\s,\.]+(?:MD|Maryland)\s*\d{5}(?:-\d{4})?)/i);
-      if (addressMatch) {
-        permitData.address = addressMatch[1].replace(/\s+/g, ' ').trim();
-      }
-    }
+    // Use AI to extract data and score the permit
+    const aiData = await extractAndScorePermit(permitNumber, JURISDICTION, pageText);
+    permitData.aiData = aiData;
 
-    // Fallback: Look for any Baltimore address pattern
-    if (!permitData.address) {
-      const addressPatterns = pageText.match(/(\d+\s+[A-Za-z0-9\s]+(?:Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Lane|Ln|Way|Court|Ct|Boulevard|Blvd|Place|Pl)[^,]*,\s*(?:Baltimore)[^,]*,?\s*(?:MD|Maryland)\s*\d{5}(?:-\d{4})?)/gi);
-      if (addressPatterns && addressPatterns.length > 0) {
-        permitData.address = addressPatterns[0].replace(/\s+/g, ' ').trim();
-      }
-    }
-
-    // === DESCRIPTION EXTRACTION (from page text) ===
-    // Look for "Project Description" section first (Baltimore City uses this)
-    const projDescMatch = pageText.match(/Project Description[\s:]*\n+([^\n]+(?:\n(?![A-Z][a-z]+:)[^\n]+)*)/i);
-    if (projDescMatch) {
-      const rawDesc = projDescMatch[1].trim();
-      // Filter out junk - specifically check for "licensed professional"
-      if (rawDesc.length > 10 &&
-          !rawDesc.toLowerCase().includes('spell check') &&
-          !rawDesc.toLowerCase().includes('licensed professional') &&
-          !rawDesc.includes('function')) {
-        permitData.description = rawDesc.replace(/\s+/g, ' ').trim();
-      }
-    }
-
-    // Fallback: Look for "Description of Work" section
-    if (!permitData.description) {
-      const descMatch = pageText.match(/Description of Work[\s:]*\n+([^\n]+(?:\n(?![A-Z][a-z]+:)[^\n]+)*)/i);
-      if (descMatch) {
-        const rawDesc = descMatch[1].trim();
-        if (rawDesc.length > 10 &&
-            !rawDesc.toLowerCase().includes('spell check') &&
-            !rawDesc.toLowerCase().includes('licensed professional') &&
-            !rawDesc.includes('function')) {
-          permitData.description = rawDesc.replace(/\s+/g, ' ').trim();
-        }
-      }
-    }
-
-    // === RECORD TYPE EXTRACTION ===
-    const typeMatch = pageText.match(/Record Type[:\s]+([^\n]+)/i) || pageText.match(/Permit Type[:\s]+([^\n]+)/i);
-    if (typeMatch) {
-      permitData.recordType = typeMatch[1].trim();
-    }
-
-    // === STATUS EXTRACTION ===
-    const statusMatch = pageText.match(/(?:Record |Permit )?Status[:\s]+([^\n]+)/i);
-    if (statusMatch && !statusMatch[1].toLowerCase().includes('status')) {
-      permitData.status = statusMatch[1].trim();
-    }
-
-    console.log(`[baltimore_city_md] Extracted - Address: "${permitData.address}", Description: "${permitData.description?.substring(0, 50)}..."`);
+    console.log(`[${JURISDICTION}] AI extracted - Address: "${aiData.address?.substring(0, 40)}...", Desc: "${aiData.description?.substring(0, 40)}...", Score: ${aiData.overallScore}`);
 
   } catch (error) {
-    console.error(`[baltimore_city_md] Error extracting permit details:`, error);
+    console.error(`[${JURISDICTION}] Error extracting permit details:`, error);
   }
 
   return permitData;
 }
 
 function transformPermit(raw: PermitData): Omit<Permit, 'id' | 'created_at' | 'updated_at'> | null {
-  if (!raw.recordNumber) return null;
+  if (!raw.recordNumber || !raw.aiData) return null;
 
-  const description = raw.description || raw.recordType || '';
-  const projectType = classifyProjectType(description, raw.recordType);
-  const addressParts = parseAddress(raw.address || '');
+  const ai = raw.aiData;
+  const addressParts = parseAddress(ai.address || '');
 
   return {
     permit_number: raw.recordNumber,
-    description,
+    description: ai.description || '',
     address: addressParts.street,
     city: 'Baltimore',
     county: 'Baltimore City',
     state: 'MD',
     zip_code: addressParts.zip,
-    project_type: projectType,
-    permit_type: raw.recordType || RECORD_TYPE_TO_SELECT,
-    status: raw.status || 'Unknown',
-    applicant_name: raw.applicantName,
-    submission_date: parseDate(raw.date),
+    project_type: ai.projectType,
+    permit_type: ai.recordType || RECORD_TYPE_TO_SELECT,
+    status: ai.status || 'Unknown',
+    applicant_name: ai.applicantName,
+    contractor_name: ai.contractorName,
+    estimated_value: ai.estimatedValue,
+    square_footage: ai.squareFootage,
     source_url: BASE_URL,
     source_jurisdiction: JURISDICTION,
     detail_url: raw.detailUrl,
-    raw_data: raw as unknown as Record<string, unknown>,
+    raw_data: {
+      ai_score: ai.overallScore,
+      ai_rating: ai.opportunityRating,
+      ai_reasoning: ai.reasoning,
+      ai_keywords: ai.keywordsDetected,
+      ai_actions: ai.recommendedActions,
+    } as Record<string, unknown>,
   };
 }
 
