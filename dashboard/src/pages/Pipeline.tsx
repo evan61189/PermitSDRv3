@@ -274,16 +274,24 @@ export default function Pipeline() {
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    console.log('Drag ended:', { activeId: active.id, overId: over?.id });
     setActivePermit(null);
 
-    if (over && active.id !== over.id) {
+    if (over) {
       const permitId = active.id as string;
       const newStage = over.id as PipelineStage;
 
+      console.log('Checking stage:', newStage, 'Valid stages:', Object.keys(PIPELINE_STAGE_CONFIG));
+
       // Only update if dropping on a valid stage
       if (Object.keys(PIPELINE_STAGE_CONFIG).includes(newStage)) {
+        console.log('Calling updateStage mutation:', { permitId, stage: newStage });
         updateStage.mutate({ permitId, stage: newStage });
+      } else {
+        console.log('Invalid stage, not updating');
       }
+    } else {
+      console.log('No drop target (over is null)');
     }
   };
 

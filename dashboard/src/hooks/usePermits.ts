@@ -237,6 +237,7 @@ export function useUpdatePipelineStage() {
 
   return useMutation({
     mutationFn: async ({ permitId, stage }: { permitId: string; stage: PipelineStage }) => {
+      console.log('Updating pipeline stage:', { permitId, stage });
       const { data, error } = await supabase
         .from('permits')
         .update({ pipeline_stage: stage, updated_at: new Date().toISOString() })
@@ -244,7 +245,11 @@ export function useUpdatePipelineStage() {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Pipeline stage update error:', error);
+        throw error;
+      }
+      console.log('Pipeline stage updated successfully:', data);
       return data;
     },
     onSuccess: () => {
@@ -252,6 +257,9 @@ export function useUpdatePipelineStage() {
       queryClient.invalidateQueries({ queryKey: ['permits'] });
       queryClient.invalidateQueries({ queryKey: ['pipeline'] });
       queryClient.invalidateQueries({ queryKey: ['permit'] });
+    },
+    onError: (error) => {
+      console.error('Pipeline stage mutation error:', error);
     },
   });
 }
@@ -261,6 +269,7 @@ export function useUpdateProjectContact() {
 
   return useMutation({
     mutationFn: async ({ permitId, contact }: { permitId: string; contact: string }) => {
+      console.log('Updating project contact:', { permitId, contact });
       const { data, error } = await supabase
         .from('permits')
         .update({ project_contact: contact, updated_at: new Date().toISOString() })
@@ -268,13 +277,20 @@ export function useUpdateProjectContact() {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Project contact update error:', error);
+        throw error;
+      }
+      console.log('Project contact updated successfully:', data);
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['permits'] });
       queryClient.invalidateQueries({ queryKey: ['pipeline'] });
       queryClient.invalidateQueries({ queryKey: ['permit'] });
+    },
+    onError: (error) => {
+      console.error('Project contact mutation error:', error);
     },
   });
 }
