@@ -395,6 +395,10 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForTimeout(1000);
 
+    // Store the current results page URL before processing permits
+    const resultsPageUrl = page.url();
+    console.log(`[${JURISDICTION}] Results page URL: ${resultsPageUrl}`);
+
     // Get all permit links from the current page results
     const permitLinks = await page.$$eval('table tbody tr a, .ACA_Grid tr a, [id*="GridView"] a', links =>
       links
@@ -422,9 +426,23 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
 
         // Click into permit detail page
         const link = page.locator(`a:has-text("${permitNumber}")`).first();
+        if (!await link.isVisible({ timeout: 5000 })) {
+          console.log(`[${JURISDICTION}] Permit link ${permitNumber} not visible, may need to re-navigate`);
+          // Re-navigate to results page and try to get back to the correct page
+          await navigateToPage(page, resultsPageUrl, currentPage);
+          await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+          await page.waitForTimeout(1000);
+          // Retry finding the link
+          const retryLink = page.locator(`a:has-text("${permitNumber}")`).first();
+          if (!await retryLink.isVisible({ timeout: 5000 })) {
+            console.log(`[${JURISDICTION}] Still can't find permit ${permitNumber}, skipping`);
+            continue;
+          }
+        }
+
         await link.scrollIntoViewIfNeeded();
         await link.click();
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('networkidle', { timeout: 30000 });
         await page.waitForTimeout(2000);
 
         // Extract permit details
@@ -433,17 +451,21 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
 
         permits.push(permitData);
 
-        // Go back to results
-        await page.goBack();
-        await page.waitForLoadState('networkidle');
+        // Navigate back to results page using stored URL instead of goBack()
+        // This is more reliable for Accela portals which often lose page state
+        console.log(`[${JURISDICTION}] Navigating back to results...`);
+        await page.goto(resultsPageUrl, { waitUntil: 'networkidle', timeout: 30000 });
         await page.waitForTimeout(2000);
 
         // Wait for results table to re-appear after navigation
         try {
-          await page.waitForSelector('table tbody tr, .ACA_Grid tr, [id*="GridView"] tr', { timeout: 10000 });
+          await page.waitForSelector('table tbody tr, .ACA_Grid tr, [id*="GridView"] tr', { timeout: 15000 });
         } catch {
-          console.log(`[${JURISDICTION}] Results table not found after going back, refreshing search...`);
-          // Try scrolling to trigger table rendering
+          console.log(`[${JURISDICTION}] Results table not found after navigation, trying to recover...`);
+          // Try navigating to the page number again if we're on a subsequent page
+          if (currentPage > 1) {
+            await navigateToPage(page, resultsPageUrl, currentPage);
+          }
         }
 
         // Scroll back to bottom where results are
@@ -452,10 +474,17 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
 
       } catch (error) {
         console.error(`[${JURISDICTION}] Error processing permit ${permitNumber}:`, error);
+        // Try to recover by navigating back to results
         try {
-          await page.goBack();
-          await page.waitForTimeout(1000);
-        } catch { /* ignore */ }
+          await page.goto(resultsPageUrl, { waitUntil: 'networkidle', timeout: 30000 });
+          await page.waitForTimeout(2000);
+          // Re-navigate to correct page if needed
+          if (currentPage > 1) {
+            await navigateToPage(page, resultsPageUrl, currentPage);
+          }
+        } catch (navError) {
+          console.error(`[${JURISDICTION}] Failed to recover navigation:`, navError);
+        }
       }
     }
 
@@ -471,6 +500,45 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
   }
 
   return permits;
+}
+
+// Helper function to navigate to a specific page number in results
+async function navigateToPage(page: Page, baseUrl: string, targetPage: number): Promise<void> {
+  if (targetPage <= 1) return;
+
+  console.log(`[${JURISDICTION}] Attempting to navigate to page ${targetPage}...`);
+
+  // First make sure we're on the results page
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForTimeout(1000);
+
+  // Click through pages until we reach the target
+  for (let p = 1; p < targetPage; p++) {
+    const nextPageNum = p + 1;
+    try {
+      // Look for the page number link
+      const pageLink = page.locator(`td.aca_pagination_td a:has-text("${nextPageNum}")`).first();
+      if (await pageLink.isVisible({ timeout: 3000 })) {
+        console.log(`[${JURISDICTION}] Clicking page ${nextPageNum}...`);
+        await pageLink.click();
+        await page.waitForLoadState('networkidle', { timeout: 20000 });
+        await page.waitForTimeout(1500);
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await page.waitForTimeout(500);
+      } else {
+        // Try Next button
+        const nextBtn = page.locator('a:has-text("Next"):not([disabled])').first();
+        if (await nextBtn.isVisible({ timeout: 2000 })) {
+          await nextBtn.click();
+          await page.waitForLoadState('networkidle', { timeout: 20000 });
+          await page.waitForTimeout(1500);
+        }
+      }
+    } catch (error) {
+      console.log(`[${JURISDICTION}] Error navigating to page ${nextPageNum}:`, error);
+      break;
+    }
+  }
 }
 
 async function checkAndClickNextPage(page: Page): Promise<boolean> {
