@@ -640,11 +640,22 @@ async function checkAndClickNextPage(page: Page): Promise<boolean> {
         }
       }
 
-      // Look for explicit Next button
-      const nextBtn = document.querySelector('a[id*="Next"]:not([disabled]), a:contains("Next")');
+      // Look for explicit Next button - use valid selectors only
+      const nextBtn = document.querySelector('a[id*="Next"]:not([disabled])');
       if (nextBtn && !nextBtn.classList.contains('disabled')) {
         (nextBtn as HTMLElement).click();
         return true;
+      }
+
+      // Fallback: find any link containing "Next" text
+      const allLinks = document.querySelectorAll('a');
+      for (const link of allLinks) {
+        if (link.textContent?.trim() === 'Next' || link.textContent?.trim() === 'Next >') {
+          if (!link.classList.contains('disabled') && !link.hasAttribute('disabled')) {
+            (link as HTMLElement).click();
+            return true;
+          }
+        }
       }
 
       return false;
