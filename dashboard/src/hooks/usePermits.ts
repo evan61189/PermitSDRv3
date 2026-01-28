@@ -256,6 +256,29 @@ export function useUpdatePipelineStage() {
   });
 }
 
+export function useUpdateProjectContact() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ permitId, contact }: { permitId: string; contact: string }) => {
+      const { data, error } = await supabase
+        .from('permits')
+        .update({ project_contact: contact, updated_at: new Date().toISOString() })
+        .eq('id', permitId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['permits'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline'] });
+      queryClient.invalidateQueries({ queryKey: ['permit'] });
+    },
+  });
+}
+
 export function usePermitsByPipelineStage(dateFrom?: string, dateTo?: string) {
   return useQuery({
     queryKey: ['pipeline', dateFrom, dateTo],
@@ -263,6 +286,7 @@ export function usePermitsByPipelineStage(dateFrom?: string, dateTo?: string) {
       let query = supabase
         .from('permits_with_scores')
         .select('*')
+        .neq('opportunity_rating', 'not_relevant') // Exclude not_relevant permits from pipeline
         .order('overall_score', { ascending: false, nullsFirst: false });
 
       if (dateFrom) {

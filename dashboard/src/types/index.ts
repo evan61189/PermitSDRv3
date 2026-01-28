@@ -54,6 +54,7 @@ export interface Permit {
   latitude?: number;
   longitude?: number;
   pipeline_stage?: PipelineStage;
+  project_contact?: string;
   created_at: string;
   updated_at: string;
 }
