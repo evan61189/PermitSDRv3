@@ -501,210 +501,73 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
     date: '',
   };
 
-  // Helper function to check if text is junk (JavaScript, labels, etc.)
-  const isJunk = (text: string): boolean => {
-    const junkPatterns = [
-      'var ', 'function', 'searchWaterMark', '__doPostBack', 'window.',
-      'document.', 'ctl00', 'onclick', 'keydown', 'keyCode', '$(',
-      'getElementById', 'querySelector', '.click', '.value', 'return ',
-      'if(', 'if (', '&&', '||', '===', '!==', 'event', 'callee',
-      'Search...', 'javascript', '<script', '</script'
-    ];
-    return junkPatterns.some(pattern => text.includes(pattern));
-  };
-
-  // Helper to check if text is a valid address (simple check)
-  const isValidAddress = (text: string): boolean => {
-    if (!text || text.length < 5 || text.length > 300) return false;
-    if (isJunk(text)) return false;
-    // Must have at least one number (street number)
-    if (!/\d/.test(text)) return false;
-    // Must have letters
-    if (!/[a-zA-Z]/.test(text)) return false;
-    return true;
-  };
-
-  // Helper to check if text is a valid description
-  const isValidDescription = (text: string): boolean => {
-    if (!text || text.length < 10 || text.length > 2000) return false;
-    if (isJunk(text)) return false;
-    const lowerText = text.toLowerCase();
-    // Exclude labels and irrelevant content
-    const excludePatterns = [
-      'licensed professional', 'license number', 'contractor name',
-      'applicant name', 'contact information', 'spell check',
-      'project description:', 'description of work:', 'description:'
-    ];
-    if (excludePatterns.some(p => lowerText.includes(p))) return false;
-    return true;
-  };
-
   try {
-    // === ADDRESS EXTRACTION ===
-    // Method 1: Look for specific full address elements by ID
-    const addressSelectors = [
-      'span[id*="lblFullAddress"]',
-      'span[id*="FullAddress"]:not([id*="Search"]):not([id*="search"])',
-      'span[id*="WorkLocationFullAddress"]',
-      'div[id*="FullAddress"]',
-    ];
+    // Get full page text for parsing
+    const pageText = await page.evaluate(() => document.body.innerText);
+    console.log(`[anne_arundel_county_md] Page text length: ${pageText.length}`);
 
-    for (const selector of addressSelectors) {
-      if (permitData.address) break;
-      try {
-        const elements = await page.locator(selector).all();
-        for (const el of elements) {
-          const text = await el.textContent();
-          if (text && isValidAddress(text.trim())) {
-            permitData.address = text.trim();
-            break;
-          }
-        }
-      } catch { continue; }
+    // === ADDRESS EXTRACTION (from page text) ===
+    // Look for address pattern after "Work Location" section
+    const workLocationMatch = pageText.match(/Work Location[\s\S]*?(\d+[^]*?(?:MD|Maryland)\s*\d{5}(?:-\d{4})?)/i);
+    if (workLocationMatch) {
+      const rawAddress = workLocationMatch[1];
+      const addressMatch = rawAddress.match(/(\d+\s+[A-Za-z0-9\s,\.]+(?:MD|Maryland)\s*\d{5}(?:-\d{4})?)/i);
+      if (addressMatch) {
+        permitData.address = addressMatch[1].replace(/\s+/g, ' ').trim();
+      }
     }
 
-    // Method 2: Find the Work Location section and extract address from it
+    // Fallback: Look for any Anne Arundel County address pattern
     if (!permitData.address) {
-      try {
-        const workLocationSection = page.locator('div:has(> span:text-is("Work Location")), div:has(> h1:text-is("Work Location")), fieldset:has(legend:text-is("Work Location"))').first();
-        if (await workLocationSection.isVisible({ timeout: 500 })) {
-          const addressEl = workLocationSection.locator('span[id*="Address"], span[id*="FullAddress"]').first();
-          if (await addressEl.isVisible({ timeout: 300 })) {
-            const text = await addressEl.textContent();
-            if (text && isValidAddress(text.trim())) {
-              permitData.address = text.trim();
-            }
-          }
-        }
-      } catch { /* continue */ }
+      const addressPatterns = pageText.match(/(\d+\s+[A-Za-z0-9\s]+(?:Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Lane|Ln|Way|Court|Ct|Boulevard|Blvd|Place|Pl)[^,]*,\s*[A-Za-z\s]+,?\s*(?:MD|Maryland)\s*\d{5}(?:-\d{4})?)/gi);
+      if (addressPatterns && addressPatterns.length > 0) {
+        permitData.address = addressPatterns[0].replace(/\s+/g, ' ').trim();
+      }
     }
 
-    // Method 3: Search all visible spans for address-like content
-    if (!permitData.address) {
-      try {
-        const spans = await page.locator('span[id*="lbl"]').all();
-        for (const span of spans) {
-          const text = await span.textContent();
-          const id = await span.getAttribute('id') || '';
-          if (id.toLowerCase().includes('address') || id.toLowerCase().includes('location')) {
-            if (text && isValidAddress(text.trim()) && !id.toLowerCase().includes('search')) {
-              permitData.address = text.trim();
-              break;
-            }
-          }
-        }
-      } catch { /* continue */ }
+    // === DESCRIPTION EXTRACTION (from page text) ===
+    // Look for "Description of Work" section
+    const descMatch = pageText.match(/Description of Work[\s:]*\n+([^\n]+(?:\n(?![A-Z][a-z]+:)[^\n]+)*)/i);
+    if (descMatch) {
+      const rawDesc = descMatch[1].trim();
+      if (rawDesc.length > 10 &&
+          !rawDesc.toLowerCase().includes('spell check') &&
+          !rawDesc.toLowerCase().includes('licensed professional') &&
+          !rawDesc.includes('function')) {
+        permitData.description = rawDesc.replace(/\s+/g, ' ').trim();
+      }
     }
 
-    // === DESCRIPTION EXTRACTION ===
-    // Method 1: Try finding by ID patterns for Description of Work (most reliable)
-    const descSelectors = [
-      'span[id*="txtDescriptionOfWork"]',
-      'span[id*="DescriptionOfWork"]',
-      'textarea[id*="DescriptionOfWork"]',
-      'span[id*="txtASIProjectDescription"]',
-      'span[id*="ProjectDescription"]',
-    ];
-
-    for (const selector of descSelectors) {
-      if (permitData.description) break;
-      try {
-        const elements = await page.locator(selector).all();
-        for (const el of elements) {
-          const text = await el.textContent();
-          if (text && isValidDescription(text.trim())) {
-            permitData.description = text.trim();
-            break;
-          }
-        }
-      } catch { continue; }
-    }
-
-    // Method 2: Look for Description of Work section and get text
+    // Fallback: Look for "Project Description" section
     if (!permitData.description) {
-      try {
-        const rows = await page.locator('tr').all();
-        for (const row of rows) {
-          const rowText = await row.textContent() || '';
-          const rowLower = rowText.toLowerCase();
-          if (rowLower.includes('description of work') || rowLower.includes('project description')) {
-            const spans = await row.locator('span').all();
-            for (const span of spans) {
-              const spanText = await span.textContent() || '';
-              const trimmed = spanText.trim();
-              if (isValidDescription(trimmed)) {
-                permitData.description = trimmed;
-                break;
-              }
-            }
-            if (permitData.description) break;
-          }
+      const projDescMatch = pageText.match(/Project Description[\s:]*\n+([^\n]+(?:\n(?![A-Z][a-z]+:)[^\n]+)*)/i);
+      if (projDescMatch) {
+        const rawDesc = projDescMatch[1].trim();
+        if (rawDesc.length > 10 &&
+            !rawDesc.toLowerCase().includes('spell check') &&
+            !rawDesc.toLowerCase().includes('licensed professional') &&
+            !rawDesc.includes('function')) {
+          permitData.description = rawDesc.replace(/\s+/g, ' ').trim();
         }
-      } catch { /* continue */ }
+      }
     }
 
-    // Method 3: Look for any description-like span by ID pattern
-    if (!permitData.description) {
-      try {
-        const spans = await page.locator('span[id*="lbl"], span[id*="txt"]').all();
-        for (const span of spans) {
-          const id = await span.getAttribute('id') || '';
-          const idLower = id.toLowerCase();
-          if ((idLower.includes('description') || idLower.includes('projectdesc')) &&
-              !idLower.includes('licensed') && !idLower.includes('professional')) {
-            const text = await span.textContent();
-            if (text && isValidDescription(text.trim())) {
-              permitData.description = text.trim();
-              break;
-            }
-          }
-        }
-      } catch { /* continue */ }
+    // === RECORD TYPE EXTRACTION ===
+    const typeMatch = pageText.match(/Record Type[:\s]+([^\n]+)/i) || pageText.match(/Permit Type[:\s]+([^\n]+)/i);
+    if (typeMatch) {
+      permitData.recordType = typeMatch[1].trim();
     }
 
-    // Record/Permit Type
-    const typeSelectors = [
-      '[id*="lblRecordType"]',
-      '[id*="lblPermitType"]',
-      '[id*="RecordType"]',
-      '[id*="PermitType"]',
-    ];
-    for (const selector of typeSelectors) {
-      try {
-        const el = page.locator(selector).first();
-        if (await el.isVisible({ timeout: 500 })) {
-          const text = await el.textContent();
-          if (text && text.trim().length > 3) {
-            permitData.recordType = text.trim();
-            break;
-          }
-        }
-      } catch { continue; }
+    // === STATUS EXTRACTION ===
+    const statusMatch = pageText.match(/(?:Record |Permit )?Status[:\s]+([^\n]+)/i);
+    if (statusMatch && !statusMatch[1].toLowerCase().includes('status')) {
+      permitData.status = statusMatch[1].trim();
     }
 
-    // Status
-    const statusSelectors = [
-      '[id*="lblStatus"]',
-      '[id*="RecordStatus"]',
-      'span[id*="Status"]',
-    ];
-    for (const selector of statusSelectors) {
-      try {
-        const el = page.locator(selector).first();
-        if (await el.isVisible({ timeout: 500 })) {
-          const text = await el.textContent();
-          if (text && text.trim().length > 2 && !text.toLowerCase().includes('status')) {
-            permitData.status = text.trim();
-            break;
-          }
-        }
-      } catch { continue; }
-    }
-
-    console.log(`[${JURISDICTION}] Extracted - Address: "${permitData.address}", Description: "${permitData.description?.substring(0, 50)}..."`);
+    console.log(`[anne_arundel_county_md] Extracted - Address: "${permitData.address}", Description: "${permitData.description?.substring(0, 50)}..."`);
 
   } catch (error) {
-    console.log(`[${JURISDICTION}] Error extracting details: ${error}`);
+    console.error(`[anne_arundel_county_md] Error extracting permit details:`, error);
   }
 
   return permitData;
