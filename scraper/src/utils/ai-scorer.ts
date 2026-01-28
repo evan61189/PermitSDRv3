@@ -63,7 +63,21 @@ Extract and return the following as JSON:
    - contractor_name: Contractor name if shown
    - estimated_value: Estimated project value as a number (null if not shown)
    - square_footage: Square footage as a number (null if not shown)
-   - project_type: One of: "commercial_new", "commercial_renovation", "residential_new", "residential_renovation", "industrial", "mixed_use", "electrical", "plumbing", "hvac", "roofing", "demolition", "other"
+   - project_type: Classify based on the description using these rules:
+     * "commercial_new" - New commercial building construction, ground-up commercial
+     * "commercial_renovation" - Commercial alterations, tenant fit-outs, office buildouts, retail renovations, restaurant buildouts, medical/dental office work, commercial interior work
+     * "residential_new" - New residential construction (single or multi-family)
+     * "residential_renovation" - Residential alterations, home renovations, apartment renovations
+     * "industrial" - Warehouse, manufacturing, industrial facility work
+     * "mixed_use" - Projects combining residential and commercial
+     * "electrical" - Electrical-only permits (panel upgrades, wiring, etc.)
+     * "plumbing" - Plumbing-only permits
+     * "hvac" - HVAC-only permits (heating, cooling, ventilation)
+     * "roofing" - Roofing-only permits
+     * "demolition" - Demolition permits
+     * "other" - Only if none of the above clearly apply
+
+     IMPORTANT: Most commercial alteration permits should be "commercial_renovation". Look for keywords like: tenant, fit-out, buildout, alteration, renovation, interior, office, retail, restaurant, medical, dental, commercial.
 
 2. SCORING (0-100 scale):
    - overall_score: How good an opportunity this is for Clipper (0-100)
