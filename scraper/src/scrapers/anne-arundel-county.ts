@@ -35,10 +35,10 @@ export async function scrapeAnneArundelCounty(): Promise<ScraperResult> {
     // Step 2: Find dropdown by label "Record Type" and select "Non Residential Alteration Permit"
     await selectDropdownByLabel(page, DROPDOWN_LABEL, RECORD_TYPE_TO_SELECT);
 
-    // Step 3: Enter date range (last 7 days)
+    // Step 3: Enter date range (last 3 days)
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 7);
+    startDate.setDate(startDate.getDate() - 3);
     await enterDateRange(page, startDate, endDate);
 
     // Step 4: Click search button
@@ -393,6 +393,10 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
     return permits;
   }
 
+  // Store the initial results page URL ONCE (page 1) - this is used for recovery
+  const baseResultsUrl = page.url();
+  console.log(`[${JURISDICTION}] Base results URL (page 1): ${baseResultsUrl}`);
+
   // Process all pages
   while (true) {
     console.log(`[${JURISDICTION}] Processing page ${currentPage}...`);
@@ -400,10 +404,6 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
     // Scroll to bottom to ensure results are visible
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForTimeout(1000);
-
-    // Store the current results page URL before processing permits
-    const resultsPageUrl = page.url();
-    console.log(`[${JURISDICTION}] Results page URL: ${resultsPageUrl}`);
 
     // Get all permit links from the current page results
     const permitLinks = await page.$$eval('table tbody tr a, .ACA_Grid tr a, [id*="GridView"] a', links =>
@@ -433,9 +433,11 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
         // Click into permit detail page
         const link = page.locator(`a:has-text("${permitNumber}")`).first();
         if (!await link.isVisible({ timeout: 5000 })) {
-          console.log(`[${JURISDICTION}] Permit link ${permitNumber} not visible, may need to re-navigate`);
-          // Re-navigate to results page and try to get back to the correct page
-          await navigateToPage(page, resultsPageUrl, currentPage);
+          console.log(`[${JURISDICTION}] Permit link ${permitNumber} not visible, recovering...`);
+          // Recovery: go back to base URL and navigate to current page
+          await page.goto(baseResultsUrl, { waitUntil: 'networkidle', timeout: 30000 });
+          await page.waitForTimeout(2000);
+          await navigateToPage(page, currentPage);
           await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
           await page.waitForTimeout(1000);
           // Retry finding the link
@@ -457,21 +459,21 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
 
         permits.push(permitData);
 
-        // Navigate back to results page using stored URL instead of goBack()
-        // This is more reliable for Accela portals which often lose page state
-        console.log(`[${JURISDICTION}] Navigating back to results...`);
-        await page.goto(resultsPageUrl, { waitUntil: 'networkidle', timeout: 30000 });
+        // Navigate back to results: go to base URL then navigate to current page
+        console.log(`[${JURISDICTION}] Navigating back to results page ${currentPage}...`);
+        await page.goto(baseResultsUrl, { waitUntil: 'networkidle', timeout: 30000 });
         await page.waitForTimeout(2000);
+
+        // Navigate to the current page if not on page 1
+        if (currentPage > 1) {
+          await navigateToPage(page, currentPage);
+        }
 
         // Wait for results table to re-appear after navigation
         try {
           await page.waitForSelector('table tbody tr, .ACA_Grid tr, [id*="GridView"] tr', { timeout: 15000 });
         } catch {
-          console.log(`[${JURISDICTION}] Results table not found after navigation, trying to recover...`);
-          // Try navigating to the page number again if we're on a subsequent page
-          if (currentPage > 1) {
-            await navigateToPage(page, resultsPageUrl, currentPage);
-          }
+          console.log(`[${JURISDICTION}] Results table not found after navigation`);
         }
 
         // Scroll back to bottom where results are
@@ -480,13 +482,12 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
 
       } catch (error) {
         console.error(`[${JURISDICTION}] Error processing permit ${permitNumber}:`, error);
-        // Try to recover by navigating back to results
+        // Try to recover by going back to base URL and navigating to current page
         try {
-          await page.goto(resultsPageUrl, { waitUntil: 'networkidle', timeout: 30000 });
+          await page.goto(baseResultsUrl, { waitUntil: 'networkidle', timeout: 30000 });
           await page.waitForTimeout(2000);
-          // Re-navigate to correct page if needed
           if (currentPage > 1) {
-            await navigateToPage(page, resultsPageUrl, currentPage);
+            await navigateToPage(page, currentPage);
           }
         } catch (navError) {
           console.error(`[${JURISDICTION}] Failed to recover navigation:`, navError);
@@ -509,37 +510,45 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
 }
 
 // Helper function to navigate to a specific page number in results
-async function navigateToPage(page: Page, baseUrl: string, targetPage: number): Promise<void> {
+async function navigateToPage(page: Page, targetPage: number): Promise<void> {
   if (targetPage <= 1) return;
 
-  console.log(`[${JURISDICTION}] Attempting to navigate to page ${targetPage}...`);
+  console.log(`[${JURISDICTION}] Navigating to page ${targetPage}...`);
 
-  // First make sure we're on the results page
+  // Scroll to bottom to see pagination
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await page.waitForTimeout(1000);
 
-  // Click through pages until we reach the target
+  // Click through pages sequentially until we reach the target
   for (let p = 1; p < targetPage; p++) {
     const nextPageNum = p + 1;
+    console.log(`[${JURISDICTION}] Clicking to page ${nextPageNum}...`);
+
     try {
-      // Look for the page number link
+      // First try: direct page number link
       const pageLink = page.locator(`td.aca_pagination_td a:has-text("${nextPageNum}")`).first();
       if (await pageLink.isVisible({ timeout: 3000 })) {
-        console.log(`[${JURISDICTION}] Clicking page ${nextPageNum}...`);
         await pageLink.click();
         await page.waitForLoadState('networkidle', { timeout: 20000 });
         await page.waitForTimeout(1500);
         await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
         await page.waitForTimeout(500);
-      } else {
-        // Try Next button
-        const nextBtn = page.locator('a:has-text("Next"):not([disabled])').first();
-        if (await nextBtn.isVisible({ timeout: 2000 })) {
-          await nextBtn.click();
-          await page.waitForLoadState('networkidle', { timeout: 20000 });
-          await page.waitForTimeout(1500);
-        }
+        continue;
       }
+
+      // Second try: "Next" button
+      const nextBtn = page.locator('a:has-text("Next"):not([disabled]), a[id*="lnkNext"]:not([disabled])').first();
+      if (await nextBtn.isVisible({ timeout: 2000 })) {
+        await nextBtn.click();
+        await page.waitForLoadState('networkidle', { timeout: 20000 });
+        await page.waitForTimeout(1500);
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await page.waitForTimeout(500);
+        continue;
+      }
+
+      console.log(`[${JURISDICTION}] Could not find navigation to page ${nextPageNum}`);
+      break;
     } catch (error) {
       console.log(`[${JURISDICTION}] Error navigating to page ${nextPageNum}:`, error);
       break;
