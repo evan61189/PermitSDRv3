@@ -68,9 +68,9 @@ export default function PermitDetail() {
             </h1>
           </div>
 
-          {permit.source_url && (
+          {(permit.detail_url || permit.source_url) && (
             <a
-              href={permit.source_url}
+              href={permit.detail_url || permit.source_url}
               target="_blank"
               rel="noopener noreferrer"
               className="btn btn-secondary flex items-center gap-2"
