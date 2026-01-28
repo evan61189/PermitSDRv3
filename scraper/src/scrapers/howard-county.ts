@@ -6,7 +6,15 @@ import type { Permit, ScraperResult, Jurisdiction } from '../types/index.js';
 const JURISDICTION: Jurisdiction = 'howard_county_md';
 const BASE_URL = 'https://dilp.howardcountymd.gov/CitizenAccess/Cap/CapHome.aspx?module=Building&TabName=HOME';
 const DROPDOWN_LABEL = 'Permit Type';
-const PERMIT_TYPE_TO_SELECT = 'Commercial Alteration Permit';
+
+// Multiple permit types to search for
+const PERMIT_TYPES_TO_SEARCH = [
+  'Commercial Alteration Permit',
+  'Commercial Addition Permit',
+  'Commercial New Building Permit',
+  'Commercial New Building',
+  'Commercial Addition',
+];
 
 interface PermitData {
   recordNumber: string;
@@ -18,49 +26,72 @@ interface PermitData {
 export async function scrapeHowardCounty(): Promise<ScraperResult> {
   console.log(`[${JURISDICTION}] Starting scrape...`);
   const permits: Omit<Permit, 'id' | 'created_at' | 'updated_at'>[] = [];
-  let page: Page | null = null;
+  const seenPermitNumbers = new Set<string>();
 
   try {
     const { page: browserPage, context } = await getPage();
-    page = browserPage;
+    const page = browserPage;
 
-    // Step 1: Navigate to page
-    console.log(`[${JURISDICTION}] Navigating to ${BASE_URL}`);
-    await page.goto(BASE_URL, { waitUntil: 'networkidle', timeout: 60000 });
-    await page.waitForTimeout(2000);
+    // Loop through each permit type to search
+    for (const permitType of PERMIT_TYPES_TO_SEARCH) {
+      console.log(`[${JURISDICTION}] ========================================`);
+      console.log(`[${JURISDICTION}] Searching for: ${permitType}`);
+      console.log(`[${JURISDICTION}] ========================================`);
 
-    // Step 1b: Handle disclaimer if present
-    await handleDisclaimer(page);
+      try {
+        // Step 1: Navigate to page (fresh start for each permit type)
+        console.log(`[${JURISDICTION}] Navigating to ${BASE_URL}`);
+        await page.goto(BASE_URL, { waitUntil: 'networkidle', timeout: 60000 });
+        await page.waitForTimeout(2000);
 
-    // Step 2: Find dropdown by label "Permit Type" and select "Commercial Alteration Permit"
-    await selectDropdownByLabel(page, DROPDOWN_LABEL, PERMIT_TYPE_TO_SELECT);
+        // Step 1b: Handle disclaimer if present
+        await handleDisclaimer(page);
 
-    // Step 3: Enter date range (last 3 days)
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 3);
-    await enterDateRange(page, startDate, endDate);
-
-    // Step 4: Click search button (bottom left)
-    await clickSearchButton(page);
-
-    // Step 5-7: Loop through results, click each permit, capture page text, use AI to extract
-    const rawPermits = await processPermitResults(page);
-    console.log(`[${JURISDICTION}] Found ${rawPermits.length} permits to process with AI`);
-
-    // Use AI to extract and score each permit
-    for (const raw of rawPermits) {
-      if (raw.aiData) {
-        const permit = transformPermit(raw);
-        if (permit) {
-          permits.push(permit);
-          console.log(`[${JURISDICTION}] Added permit: ${permit.permit_number} (Score: ${raw.aiData.overallScore}, Rating: ${raw.aiData.opportunityRating})`);
+        // Step 2: Find dropdown by label "Permit Type" and select the permit type
+        const foundType = await selectDropdownByLabel(page, DROPDOWN_LABEL, permitType);
+        if (!foundType) {
+          console.log(`[${JURISDICTION}] Permit type "${permitType}" not found in dropdown, skipping...`);
+          continue;
         }
+
+        // Step 3: Enter date range (last 3 days)
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 3);
+        await enterDateRange(page, startDate, endDate);
+
+        // Step 4: Click search button (bottom left)
+        await clickSearchButton(page);
+
+        // Step 5-7: Loop through results, click each permit, capture page text, use AI to extract
+        const rawPermits = await processPermitResults(page);
+        console.log(`[${JURISDICTION}] Found ${rawPermits.length} permits for "${permitType}"`);
+
+        // Use AI to extract and score each permit
+        for (const raw of rawPermits) {
+          // Skip if we've already seen this permit number (avoid duplicates across permit types)
+          if (seenPermitNumbers.has(raw.recordNumber)) {
+            console.log(`[${JURISDICTION}] Skipping duplicate: ${raw.recordNumber}`);
+            continue;
+          }
+
+          if (raw.aiData) {
+            const permit = transformPermit(raw, permitType);
+            if (permit) {
+              permits.push(permit);
+              seenPermitNumbers.add(raw.recordNumber);
+              console.log(`[${JURISDICTION}] Added permit: ${permit.permit_number} (Score: ${raw.aiData.overallScore}, Rating: ${raw.aiData.opportunityRating})`);
+            }
+          }
+        }
+      } catch (typeError) {
+        console.error(`[${JURISDICTION}] Error searching for "${permitType}":`, typeError);
+        // Continue to next permit type
       }
     }
 
     await context.close();
-    console.log(`[${JURISDICTION}] Scrape complete. Found: ${permits.length} permits`);
+    console.log(`[${JURISDICTION}] Scrape complete. Found: ${permits.length} total permits`);
 
     return {
       jurisdiction: JURISDICTION,
@@ -117,7 +148,7 @@ async function scrollToRenderPage(page: Page): Promise<void> {
   console.log(`[${JURISDICTION}] Page fully rendered, scrolled back to top`);
 }
 
-async function selectDropdownByLabel(page: Page, labelText: string, optionText: string): Promise<void> {
+async function selectDropdownByLabel(page: Page, labelText: string, optionText: string): Promise<boolean> {
   console.log(`[${JURISDICTION}] Looking for "${labelText}" dropdown...`);
 
   // First, scroll to bottom to render all content
@@ -224,15 +255,19 @@ async function selectDropdownByLabel(page: Page, labelText: string, optionText: 
         console.log(`[${JURISDICTION}] Selecting: "${targetOption}"`);
         await dropdown.selectOption({ label: targetOption });
         await page.waitForTimeout(2000);
+        return true;
       } else {
         console.log(`[${JURISDICTION}] Warning: Could not find option "${optionText}"`);
         console.log(`[${JURISDICTION}] Available options: ${options.slice(0, 10).join(', ')}`);
+        return false;
       }
     } catch (error) {
       console.log(`[${JURISDICTION}] Error selecting dropdown: ${error}`);
+      return false;
     }
   } else {
     console.log(`[${JURISDICTION}] Warning: No dropdown found for "${labelText}"`);
+    return false;
   }
 }
 
@@ -701,7 +736,7 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
   return permitData;
 }
 
-function transformPermit(raw: PermitData): Omit<Permit, 'id' | 'created_at' | 'updated_at'> | null {
+function transformPermit(raw: PermitData, permitType: string): Omit<Permit, 'id' | 'created_at' | 'updated_at'> | null {
   if (!raw.recordNumber || !raw.aiData) return null;
 
   const ai = raw.aiData;
@@ -716,7 +751,7 @@ function transformPermit(raw: PermitData): Omit<Permit, 'id' | 'created_at' | 'u
     state: 'MD',
     zip_code: addressParts.zip,
     project_type: ai.projectType,
-    permit_type: ai.recordType || PERMIT_TYPE_TO_SELECT,
+    permit_type: ai.recordType || permitType,
     status: ai.status || 'Unknown',
     applicant_name: ai.applicantName,
     contractor_name: ai.contractorName,
