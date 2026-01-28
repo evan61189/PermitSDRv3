@@ -22,6 +22,14 @@ on:
         required: false
         type: boolean
         default: true
+      start_date:
+        description: 'Start date for permit search (YYYY-MM-DD)'
+        required: false
+        type: string
+      end_date:
+        description: 'End date for permit search (YYYY-MM-DD)'
+        required: false
+        type: string
 
 jobs:
   scrape:
@@ -52,11 +60,17 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
+          ARGS=""
           if [ -n "${{ github.event.inputs.jurisdiction }}" ]; then
-            npx tsx src/index.ts --jurisdiction=${{ github.event.inputs.jurisdiction }}
-          else
-            npx tsx src/index.ts
+            ARGS="$ARGS --jurisdiction=${{ github.event.inputs.jurisdiction }}"
           fi
+          if [ -n "${{ github.event.inputs.start_date }}" ]; then
+            ARGS="$ARGS --start-date=${{ github.event.inputs.start_date }}"
+          fi
+          if [ -n "${{ github.event.inputs.end_date }}" ]; then
+            ARGS="$ARGS --end-date=${{ github.event.inputs.end_date }}"
+          fi
+          npx tsx src/index.ts $ARGS
 
       - name: Run AI scoring
         if: ${{ github.event.inputs.run_scoring != 'false' }}

@@ -7,7 +7,12 @@ import { scrapeBaltimoreCityMD } from './baltimore-city.js';
 import { scrapeAnneArundelCounty } from './anne-arundel-county.js';
 import type { Jurisdiction, ScraperResult } from '../types/index.js';
 
-export type ScraperFunction = () => Promise<ScraperResult>;
+export interface DateRange {
+  startDate: Date;
+  endDate: Date;
+}
+
+export type ScraperFunction = (dateRange?: DateRange) => Promise<ScraperResult>;
 
 export const scrapers: Record<Jurisdiction, ScraperFunction> = {
   howard_county_md: scrapeHowardCounty,
@@ -15,7 +20,7 @@ export const scrapers: Record<Jurisdiction, ScraperFunction> = {
   anne_arundel_county_md: scrapeAnneArundelCounty,
 };
 
-export async function scrapeAll(): Promise<ScraperResult[]> {
+export async function scrapeAll(dateRange?: DateRange): Promise<ScraperResult[]> {
   const results: ScraperResult[] = [];
 
   for (const [jurisdiction, scraper] of Object.entries(scrapers)) {
@@ -24,7 +29,7 @@ export async function scrapeAll(): Promise<ScraperResult[]> {
     console.log('='.repeat(50));
 
     try {
-      const result = await scraper();
+      const result = await scraper(dateRange);
       results.push(result);
 
       if (result.success) {

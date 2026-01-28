@@ -2,11 +2,15 @@ import { Page } from 'playwright';
 import { getPage } from '../utils/browser.js';
 import { extractAndScorePermit, AIExtractedPermit } from '../utils/ai-scorer.js';
 import type { Permit, ScraperResult, Jurisdiction } from '../types/index.js';
+import type { DateRange } from './index.js';
 
 const JURISDICTION: Jurisdiction = 'baltimore_city_md';
 const BASE_URL = 'https://aca-prod.accela.com/BALTIMORE/Cap/CapHome.aspx?module=Building';
 const DROPDOWN_LABEL = 'Record Type';
 const RECORD_TYPE_TO_SELECT = 'Commercial and Multifamily Combo Permit';
+
+// Default date range is last 3 days
+const DEFAULT_DATE_RANGE_DAYS = 3;
 
 interface PermitData {
   recordNumber: string;
@@ -15,7 +19,7 @@ interface PermitData {
   aiData?: AIExtractedPermit;
 }
 
-export async function scrapeBaltimoreCityMD(): Promise<ScraperResult> {
+export async function scrapeBaltimoreCityMD(dateRange?: DateRange): Promise<ScraperResult> {
   console.log(`[${JURISDICTION}] Starting scrape...`);
   const permits: Omit<Permit, 'id' | 'created_at' | 'updated_at'>[] = [];
   let page: Page | null = null;
@@ -35,10 +39,18 @@ export async function scrapeBaltimoreCityMD(): Promise<ScraperResult> {
     // Step 2: Find dropdown by label "Record Type" and select "Commercial and Multifamily Combo Permit"
     await selectDropdownByLabel(page, DROPDOWN_LABEL, RECORD_TYPE_TO_SELECT);
 
-    // Step 3: Enter date range (last 3 days)
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 3);
+    // Step 3: Enter date range (use custom range or default to last 3 days)
+    let startDate: Date;
+    let endDate: Date;
+    if (dateRange) {
+      startDate = dateRange.startDate;
+      endDate = dateRange.endDate;
+    } else {
+      endDate = new Date();
+      startDate = new Date();
+      startDate.setDate(startDate.getDate() - DEFAULT_DATE_RANGE_DAYS);
+    }
+    console.log(`[${JURISDICTION}] Searching date range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
     await enterDateRange(page, startDate, endDate);
 
     // Step 4: Click search button
