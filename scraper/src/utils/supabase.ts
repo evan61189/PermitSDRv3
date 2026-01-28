@@ -93,6 +93,44 @@ export async function getUnscorredPermits(limit = 50): Promise<Permit[]> {
   return data || [];
 }
 
+/**
+ * Save AI scores that were extracted along with permit data.
+ * This is used when scores are generated during the extraction process
+ * (via extractAndScorePermit) rather than in a separate scoring step.
+ */
+export async function saveExtractedScores(permits: Permit[]): Promise<number> {
+  let savedCount = 0;
+
+  for (const permit of permits) {
+    // Check if the permit has AI score data in raw_data
+    const rawData = permit.raw_data as Record<string, unknown> | null;
+    if (!rawData || !rawData.ai_score) continue;
+
+    try {
+      const score: Omit<AIScore, 'id'> = {
+        permit_id: permit.id,
+        overall_score: (rawData.ai_score as number) || 0,
+        opportunity_rating: (rawData.ai_rating as 'hot' | 'warm' | 'cold' | 'not_relevant') || 'not_relevant',
+        project_size_score: (rawData.ai_score as number) || 0, // Use overall as default
+        timing_score: 50, // Default middle value
+        location_score: 50, // Default middle value
+        competition_score: 50, // Default middle value
+        reasoning: (rawData.ai_reasoning as string) || '',
+        keywords_detected: (rawData.ai_keywords as string[]) || [],
+        recommended_actions: (rawData.ai_actions as string[]) || [],
+        scored_at: new Date().toISOString(),
+      };
+
+      await saveAIScore(score);
+      savedCount++;
+    } catch (error) {
+      console.error(`Failed to save extracted score for permit ${permit.permit_number}:`, error);
+    }
+  }
+
+  return savedCount;
+}
+
 export async function deleteAllPermits(): Promise<{ deleted: number }> {
   // First delete all AI scores (though CASCADE should handle this)
   await supabase.from('ai_scores').delete().neq('id', '00000000-0000-0000-0000-000000000000');

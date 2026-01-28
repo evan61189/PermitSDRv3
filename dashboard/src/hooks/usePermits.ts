@@ -8,7 +8,8 @@ export interface PermitFilters {
   opportunityRating?: OpportunityRating;
   search?: string;
   minScore?: number;
-  sortBy?: 'created_at' | 'overall_score' | 'submission_date';
+  minValue?: number;
+  sortBy?: 'created_at' | 'overall_score' | 'submission_date' | 'estimated_value';
   sortOrder?: 'asc' | 'desc';
   limit?: number;
   offset?: number;
@@ -42,6 +43,10 @@ export function usePermits(filters: PermitFilters = {}) {
 
       if (filters.minScore !== undefined) {
         query = query.gte('overall_score', filters.minScore);
+      }
+
+      if (filters.minValue !== undefined) {
+        query = query.gte('estimated_value', filters.minValue);
       }
 
       const sortBy = filters.sortBy || 'created_at';
@@ -154,6 +159,25 @@ export function useHotOpportunities(limit = 10) {
         .select('*')
         .eq('opportunity_rating', 'hot')
         .order('overall_score', { ascending: false })
+        .limit(limit);
+
+      if (error) throw error;
+
+      return data || [];
+    },
+  });
+}
+
+export function usePermitsForMap(limit = 100) {
+  return useQuery({
+    queryKey: ['permits-for-map', limit],
+    queryFn: async (): Promise<PermitWithScore[]> => {
+      // Get all permits, ordered by score
+      // Permits without coordinates will be filtered on the map component
+      const { data, error } = await supabase
+        .from('permits_with_scores')
+        .select('*')
+        .order('overall_score', { ascending: false, nullsFirst: false })
         .limit(limit);
 
       if (error) throw error;

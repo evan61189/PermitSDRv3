@@ -1,4 +1,4 @@
-import { FileText, Flame, ThermometerSun, Snowflake } from 'lucide-react';
+import { FileText, Flame, ThermometerSun, Snowflake, MapPin } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -13,21 +13,25 @@ import {
 } from 'recharts';
 import StatCard from '../components/StatCard';
 import PermitCard from '../components/PermitCard';
+import OpportunityMap from '../components/OpportunityMap';
 import {
   useDashboardStats,
   usePermitsByType,
   usePermitsByJurisdiction,
   useHotOpportunities,
+  usePermitsForMap,
 } from '../hooks/usePermits';
 import { PROJECT_TYPE_NAMES, JURISDICTION_NAMES, type ProjectType, type Jurisdiction } from '../types';
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+// Clipper Construction brand colors for charts
+const COLORS = ['#F9A825', '#2D3436', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
 export default function Dashboard() {
   const { data: stats } = useDashboardStats();
   const { data: byType } = usePermitsByType();
   const { data: byJurisdiction } = usePermitsByJurisdiction();
   const { data: hotOpportunities, isLoading: hotLoading } = useHotOpportunities(5);
+  const { data: mapPermits, isLoading: mapLoading } = usePermitsForMap(100);
 
   const typeChartData = byType?.map((item) => ({
     name: PROJECT_TYPE_NAMES[item.type as ProjectType] || item.type,
@@ -43,37 +47,41 @@ export default function Dashboard() {
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <h1 className="text-2xl font-bold text-clipper-navy">Dashboard</h1>
         <p className="mt-1 text-gray-500">
-          Overview of permit opportunities and AI-scored leads
+          Commercial permit opportunities for <span className="text-clipper-gold font-medium">Clipper Construction</span>
         </p>
       </div>
 
-      {/* Stats Grid */}
+      {/* Stats Grid - Clickable Kanban Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           title="Total Permits"
           value={stats?.total_permits || 0}
           icon={FileText}
           color="blue"
+          href="/permits"
         />
         <StatCard
           title="Hot Opportunities"
           value={stats?.hot_opportunities || 0}
           icon={Flame}
           color="red"
+          href="/permits?rating=hot"
         />
         <StatCard
           title="Warm Opportunities"
           value={stats?.warm_opportunities || 0}
           icon={ThermometerSun}
           color="amber"
+          href="/permits?rating=warm"
         />
         <StatCard
           title="Cold Opportunities"
           value={stats?.cold_opportunities || 0}
           icon={Snowflake}
           color="blue"
+          href="/permits?rating=cold"
         />
       </div>
 
@@ -81,7 +89,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* By Project Type */}
         <div className="card p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          <h2 className="text-lg font-semibold text-clipper-navy mb-4">
             Permits by Project Type
           </h2>
           <div className="h-64">
@@ -91,7 +99,7 @@ export default function Dashboard() {
                 <XAxis type="number" />
                 <YAxis dataKey="name" type="category" width={120} tick={{ fontSize: 12 }} />
                 <Tooltip />
-                <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+                <Bar dataKey="value" fill="#F9A825" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -99,7 +107,7 @@ export default function Dashboard() {
 
         {/* By Jurisdiction */}
         <div className="card p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          <h2 className="text-lg font-semibold text-clipper-navy mb-4">
             Permits by Jurisdiction
           </h2>
           <div className="h-64">
@@ -126,14 +134,31 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Opportunity Map */}
+      <div className="card p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-clipper-navy flex items-center gap-2">
+            <MapPin className="w-5 h-5 text-clipper-gold" />
+            Opportunity Map
+          </h2>
+        </div>
+        {mapLoading ? (
+          <div className="h-80 flex items-center justify-center text-gray-500">
+            Loading map...
+          </div>
+        ) : (
+          <OpportunityMap permits={mapPermits || []} className="h-80" />
+        )}
+      </div>
+
       {/* Hot Opportunities */}
       <div className="card p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-clipper-navy flex items-center gap-2">
             <Flame className="w-5 h-5 text-red-500" />
             Top Hot Opportunities
           </h2>
-          <a href="/permits?rating=hot" className="text-sm text-blue-600 hover:text-blue-700">
+          <a href="/permits?rating=hot" className="text-sm text-clipper-gold hover:text-clipper-gold-dark font-medium">
             View all →
           </a>
         </div>

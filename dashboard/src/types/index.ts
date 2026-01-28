@@ -42,6 +42,8 @@ export interface Permit {
   source_jurisdiction: Jurisdiction;
   screenshot_url?: string;
   detail_url?: string;
+  latitude?: number;
+  longitude?: number;
   created_at: string;
   updated_at: string;
 }
