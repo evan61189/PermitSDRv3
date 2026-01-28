@@ -85,10 +85,9 @@ function PipelineColumn({ stage, permits, onUpdateContact }: PipelineColumnProps
 interface DraggablePipelineCardProps {
   permit: PermitWithScore;
   onUpdateContact: (permitId: string, contact: string) => void;
-  isDragOverlay?: boolean;
 }
 
-function DraggablePipelineCard({ permit, onUpdateContact, isDragOverlay }: DraggablePipelineCardProps) {
+function DraggablePipelineCard({ permit, onUpdateContact }: DraggablePipelineCardProps) {
   const {
     attributes,
     listeners,
@@ -108,13 +107,14 @@ function DraggablePipelineCard({ permit, onUpdateContact, isDragOverlay }: Dragg
     <div
       ref={setNodeRef}
       style={style}
-      className={`${isDragging && !isDragOverlay ? 'opacity-30' : ''}`}
+      {...attributes}
+      {...listeners}
+      className={`${isDragging ? 'opacity-50 z-50' : ''}`}
     >
       <PipelineCard
         permit={permit}
         onUpdateContact={onUpdateContact}
-        dragHandleProps={{ ...attributes, ...listeners }}
-        isDragOverlay={isDragOverlay}
+        isDragging={isDragging}
       />
     </div>
   );
@@ -123,11 +123,11 @@ function DraggablePipelineCard({ permit, onUpdateContact, isDragOverlay }: Dragg
 interface PipelineCardProps {
   permit: PermitWithScore;
   onUpdateContact: (permitId: string, contact: string) => void;
-  dragHandleProps?: Record<string, unknown>;
+  isDragging?: boolean;
   isDragOverlay?: boolean;
 }
 
-function PipelineCard({ permit, onUpdateContact, dragHandleProps, isDragOverlay }: PipelineCardProps) {
+function PipelineCard({ permit, onUpdateContact, isDragging, isDragOverlay }: PipelineCardProps) {
   const [isEditingContact, setIsEditingContact] = useState(false);
   const [contactValue, setContactValue] = useState(permit.project_contact || '');
 
@@ -147,15 +147,12 @@ function PipelineCard({ permit, onUpdateContact, dragHandleProps, isDragOverlay 
 
   return (
     <div
-      className={`bg-white rounded border border-gray-200 p-2 hover:shadow-md transition-all select-none ${
+      className={`bg-white rounded border border-gray-200 p-2 hover:shadow-md transition-all select-none cursor-grab active:cursor-grabbing ${
         isDragOverlay ? 'shadow-xl ring-2 ring-clipper-gold rotate-2' : ''
-      }`}
+      } ${isDragging ? 'ring-2 ring-clipper-gold' : ''}`}
     >
       <div className="flex items-start gap-1.5">
-        <div
-          {...dragHandleProps}
-          className="cursor-grab active:cursor-grabbing touch-none"
-        >
+        <div className="touch-none">
           <GripVertical className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
         </div>
         <div className="flex-1 min-w-0">
