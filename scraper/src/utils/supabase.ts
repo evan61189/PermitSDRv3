@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Permit, AIScore } from '../types/index.js';
+import { geocodeAddress } from './geocoder.js';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY!;
@@ -43,10 +44,53 @@ export async function upsertPermits(permits: Omit<Permit, 'id' | 'created_at' | 
   const deduplicatedPermits = Array.from(uniquePermits.values());
   console.log(`[supabase] Upserting ${deduplicatedPermits.length} permits (${permits.length - deduplicatedPermits.length} duplicates removed)`);
 
+  // Geocode permits that don't have lat/long (sequentially to respect rate limits)
+  console.log(`[supabase] Geocoding addresses...`);
+  const geocodedPermits: typeof deduplicatedPermits = [];
+
+  for (const permit of deduplicatedPermits) {
+    // Skip if already geocoded
+    if (permit.latitude && permit.longitude) {
+      geocodedPermits.push(permit);
+      continue;
+    }
+
+    // Skip if no valid address
+    if (!permit.address || permit.address.length < 5) {
+      geocodedPermits.push(permit);
+      continue;
+    }
+
+    try {
+      const coords = await geocodeAddress(
+        permit.address,
+        permit.city,
+        permit.state,
+        permit.zip_code
+      );
+
+      if (coords) {
+        geocodedPermits.push({
+          ...permit,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        });
+      } else {
+        geocodedPermits.push(permit);
+      }
+    } catch (error) {
+      console.warn(`[supabase] Failed to geocode ${permit.address}:`, error);
+      geocodedPermits.push(permit);
+    }
+  }
+
+  const geocodedCount = geocodedPermits.filter(p => p.latitude && p.longitude).length;
+  console.log(`[supabase] Geocoded ${geocodedCount}/${geocodedPermits.length} permits`);
+
   const { data, error } = await supabase
     .from('permits')
     .upsert(
-      deduplicatedPermits.map((p) => ({
+      geocodedPermits.map((p) => ({
         ...p,
         updated_at: new Date().toISOString(),
       })),
