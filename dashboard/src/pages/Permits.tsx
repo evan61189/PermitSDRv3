@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Search, ChevronLeft, ChevronRight, Play, Loader2, Trash2 } from 'lucide-react';
 import PermitCard from '../components/PermitCard';
 import { usePermits, useDeleteAllPermits, type PermitFilters } from '../hooks/usePermits';
@@ -13,14 +14,41 @@ import {
 const PAGE_SIZE = 20;
 
 export default function Permits() {
-  const [filters, setFilters] = useState<PermitFilters>({
-    sortBy: 'created_at',
-    sortOrder: 'desc',
-    limit: PAGE_SIZE,
-    offset: 0,
-  });
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [searchInput, setSearchInput] = useState('');
+  // Initialize filters from URL params
+  const getInitialFilters = (): PermitFilters => {
+    const rating = searchParams.get('rating') as OpportunityRating | null;
+    const jurisdiction = searchParams.get('jurisdiction') as Jurisdiction | null;
+    const projectType = searchParams.get('projectType') as ProjectType | null;
+    const search = searchParams.get('search');
+
+    return {
+      opportunityRating: rating || undefined,
+      jurisdiction: jurisdiction || undefined,
+      projectType: projectType || undefined,
+      search: search || undefined,
+      sortBy: 'created_at',
+      sortOrder: 'desc',
+      limit: PAGE_SIZE,
+      offset: 0,
+    };
+  };
+
+  const [filters, setFilters] = useState<PermitFilters>(getInitialFilters);
+
+  // Sync filters to URL params when they change
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (filters.opportunityRating) params.set('rating', filters.opportunityRating);
+    if (filters.jurisdiction) params.set('jurisdiction', filters.jurisdiction);
+    if (filters.projectType) params.set('projectType', filters.projectType);
+    if (filters.search) params.set('search', filters.search);
+
+    setSearchParams(params, { replace: true });
+  }, [filters.opportunityRating, filters.jurisdiction, filters.projectType, filters.search, setSearchParams]);
+
+  const [searchInput, setSearchInput] = useState(filters.search || '');
   const [scraperStatus, setScraperStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [scraperMessage, setScraperMessage] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -66,15 +94,21 @@ export default function Permits() {
   const totalPages = Math.ceil((data?.count || 0) / PAGE_SIZE);
   const currentPage = Math.floor((filters.offset || 0) / PAGE_SIZE) + 1;
 
-  const hasActiveFilters = filters.jurisdiction || filters.projectType || filters.opportunityRating || filters.search;
+  const hasActiveFilters = filters.jurisdiction || filters.projectType || filters.opportunityRating || filters.search || filters.minScore || filters.minValue;
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setFilters((f) => ({ ...f, search: searchInput, offset: 0 }));
   };
 
-  const handleFilterChange = (key: keyof PermitFilters, value: string | undefined) => {
-    setFilters((f) => ({ ...f, [key]: value || undefined, offset: 0 }));
+  const handleFilterChange = (key: keyof PermitFilters, value: string | number | undefined) => {
+    // Handle numeric values for minScore and minValue
+    if ((key === 'minScore' || key === 'minValue') && typeof value === 'string') {
+      const numValue = value ? parseInt(value, 10) : undefined;
+      setFilters((f) => ({ ...f, [key]: numValue, offset: 0 }));
+    } else {
+      setFilters((f) => ({ ...f, [key]: value || undefined, offset: 0 }));
+    }
   };
 
   const handlePageChange = (newPage: number) => {
@@ -87,8 +121,11 @@ export default function Permits() {
       sortOrder: 'desc',
       limit: PAGE_SIZE,
       offset: 0,
+      minScore: undefined,
+      minValue: undefined,
     });
     setSearchInput('');
+    setSearchParams({}, { replace: true });
   };
 
   const handleDeleteAll = async () => {
@@ -105,9 +142,9 @@ export default function Permits() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Permits</h1>
+          <h1 className="text-2xl font-bold text-clipper-navy">Permits</h1>
           <p className="mt-1 text-gray-500">
-            Browse and filter permit opportunities
+            Browse and filter permit opportunities for <span className="text-clipper-gold font-medium">Clipper Construction</span>
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -131,7 +168,7 @@ export default function Permits() {
           <button
             onClick={triggerScraper}
             disabled={scraperStatus === 'loading'}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-clipper-gold text-clipper-navy font-semibold rounded-lg hover:bg-clipper-gold-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {scraperStatus === 'loading' ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -202,10 +239,81 @@ export default function Permits() {
               className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="created_at">Sort by: Date Added</option>
-              <option value="overall_score">Sort by: Score</option>
+              <option value="overall_score">Sort by: AI Score</option>
+              <option value="estimated_value">Sort by: Est. Value</option>
               <option value="submission_date">Sort by: Submission Date</option>
             </select>
           </div>
+        </div>
+
+        {/* Advanced Filters Row */}
+        <div className="flex flex-wrap items-center gap-4 mt-4 pt-4 border-t">
+          {/* Minimum Score Filter */}
+          <div className="flex items-center gap-2">
+            <label htmlFor="minScore" className="text-sm text-gray-600 whitespace-nowrap">
+              Min Score:
+            </label>
+            <select
+              id="minScore"
+              value={filters.minScore?.toString() || ''}
+              onChange={(e) => handleFilterChange('minScore', e.target.value)}
+              className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Any</option>
+              <option value="25">25+</option>
+              <option value="50">50+</option>
+              <option value="75">75+</option>
+              <option value="90">90+</option>
+            </select>
+          </div>
+
+          {/* Minimum Value Filter */}
+          <div className="flex items-center gap-2">
+            <label htmlFor="minValue" className="text-sm text-gray-600 whitespace-nowrap">
+              Min Value:
+            </label>
+            <select
+              id="minValue"
+              value={filters.minValue?.toString() || ''}
+              onChange={(e) => handleFilterChange('minValue', e.target.value)}
+              className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Any</option>
+              <option value="50000">$50K+</option>
+              <option value="100000">$100K+</option>
+              <option value="250000">$250K+</option>
+              <option value="500000">$500K+</option>
+              <option value="1000000">$1M+</option>
+            </select>
+          </div>
+
+          {/* Quick Filter: Hot & Warm Only */}
+          <button
+            onClick={() => {
+              if (filters.minScore === 50) {
+                handleFilterChange('minScore', undefined);
+              } else {
+                handleFilterChange('minScore', '50');
+              }
+            }}
+            className={`px-3 py-1 text-sm rounded-full transition-colors ${
+              filters.minScore === 50
+                ? 'bg-amber-100 text-amber-700 border border-amber-300'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            Hot & Warm Only
+          </button>
+
+          {/* Clear Filters Button */}
+          {hasActiveFilters && (
+            <button
+              onClick={clearFilters}
+              className="px-3 py-1 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 rounded"
+            >
+              Clear All Filters
+            </button>
+          )}
         </div>
       </div>
 

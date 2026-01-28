@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { scrapers, scrapeAll } from './scrapers/index.js';
 import { closeBrowser } from './utils/browser.js';
-import { upsertPermits, getUnscorredPermits, saveAIScore } from './utils/supabase.js';
+import { upsertPermits, getUnscorredPermits, saveAIScore, saveExtractedScores } from './utils/supabase.js';
 import { scorePermit } from './utils/ai-scorer.js';
 import type { Jurisdiction } from './types/index.js';
 
@@ -28,6 +28,13 @@ async function main() {
           console.log(`\nSaving ${result.permits.length} permits to database...`);
           const saved = await upsertPermits(result.permits);
           console.log(`Saved ${saved.length} permits to database`);
+
+          // Save AI scores that were extracted during scraping
+          if (saved.length > 0) {
+            console.log('Saving AI scores from extraction...');
+            const scoresCount = await saveExtractedScores(saved);
+            console.log(`Saved ${scoresCount} AI scores`);
+          }
         } else if (!result.success) {
           console.error(`Scraper failed: ${result.error}`);
         } else {
@@ -43,11 +50,20 @@ async function main() {
         const results = await scrapeAll();
 
         let totalPermits = 0;
+        const allSaved: any[] = [];
         for (const result of results) {
           if (result.success && result.permits.length > 0) {
             const saved = await upsertPermits(result.permits);
             totalPermits += saved.length;
+            allSaved.push(...saved);
           }
+        }
+
+        // Save AI scores that were extracted during scraping
+        if (allSaved.length > 0) {
+          console.log('\nSaving AI scores from extraction...');
+          const scoresCount = await saveExtractedScores(allSaved);
+          console.log(`Saved ${scoresCount} AI scores`);
         }
 
         console.log(`\n========================================`);
@@ -56,23 +72,30 @@ async function main() {
       }
     }
 
-    // Run AI scoring if requested
+    // Run AI scoring if requested (for permits that weren't scored during extraction)
+    // NOTE: Most permits are now scored during extraction. This is primarily for
+    // re-scoring old permits or handling edge cases where extraction scoring failed.
     if (shouldScore || scoreOnly) {
       console.log('\n========================================');
-      console.log('Running AI Scoring...');
+      console.log('Running AI Scoring (for unscored permits)...');
       console.log('========================================\n');
 
       const unscored = await getUnscorredPermits(50);
-      console.log(`Found ${unscored.length} unscored permits`);
 
-      for (const permit of unscored) {
-        try {
-          console.log(`Scoring permit: ${permit.permit_number}`);
-          const score = await scorePermit(permit);
-          await saveAIScore(score);
-          console.log(`  -> Score: ${score.overall_score} (${score.opportunity_rating})`);
-        } catch (error) {
-          console.error(`  -> Error scoring permit:`, error);
+      if (unscored.length === 0) {
+        console.log('All permits are already scored!');
+      } else {
+        console.log(`Found ${unscored.length} unscored permits`);
+
+        for (const permit of unscored) {
+          try {
+            console.log(`Scoring permit: ${permit.permit_number}`);
+            const score = await scorePermit(permit);
+            await saveAIScore(score);
+            console.log(`  -> Score: ${score.overall_score} (${score.opportunity_rating})`);
+          } catch (error) {
+            console.error(`  -> Error scoring permit:`, error);
+          }
         }
       }
     }

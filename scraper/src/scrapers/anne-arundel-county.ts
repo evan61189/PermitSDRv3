@@ -478,12 +478,111 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
   return permits;
 }
 
-async function checkAndClickNextPage(_page: Page): Promise<boolean> {
-  // Pagination disabled for now to avoid navigation errors
-  // Only processing first page of results
-  console.log(`[${JURISDICTION}] Pagination disabled - processing first page only`);
+async function checkAndClickNextPage(page: Page): Promise<boolean> {
+  console.log(`[${JURISDICTION}] Checking for next page...`);
 
-  return false;
+  try {
+    // Scroll to bottom where pagination controls are
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(1000);
+
+    // Look for Accela pagination controls - typically "Next" link or page numbers
+    const paginationSelectors = [
+      // Accela "Next" button/link
+      'a.aca_pagination_next:not(.aca_pagination_disabled)',
+      'a[id*="lnkNext"]:not([disabled])',
+      'a:has-text("Next"):not([disabled])',
+      'a:has-text("Next >"):not([disabled])',
+      // Accela page number links (find the current page, click next number)
+      'td.aca_pagination_td a.NotSelectedPageButton',
+    ];
+
+    for (const selector of paginationSelectors) {
+      try {
+        const nextButton = page.locator(selector).first();
+        if (await nextButton.isVisible({ timeout: 2000 })) {
+          // Check if it's a page number, find the next one after current
+          const isPageNumber = selector.includes('NotSelectedPageButton');
+
+          if (isPageNumber) {
+            // Find current page and click next
+            const currentPage = page.locator('td.aca_pagination_td span.SelectedPageButton, td.aca_pagination_td a.SelectedPageButton');
+            if (await currentPage.isVisible({ timeout: 1000 })) {
+              const currentText = await currentPage.textContent();
+              const currentNum = parseInt(currentText || '1');
+              const nextNum = currentNum + 1;
+
+              // Look for next page number
+              const nextPageLink = page.locator(`td.aca_pagination_td a:has-text("${nextNum}")`).first();
+              if (await nextPageLink.isVisible({ timeout: 1000 })) {
+                console.log(`[${JURISDICTION}] Clicking page ${nextNum}...`);
+                await nextPageLink.click();
+                await page.waitForLoadState('networkidle');
+                await page.waitForTimeout(2000);
+                return true;
+              }
+            }
+          } else {
+            // It's a "Next" button
+            console.log(`[${JURISDICTION}] Clicking Next button...`);
+            await nextButton.scrollIntoViewIfNeeded();
+            await nextButton.click();
+            await page.waitForLoadState('networkidle');
+            await page.waitForTimeout(2000);
+            return true;
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    // Try JavaScript approach for finding next page
+    const hasNext = await page.evaluate(() => {
+      // Look for pagination container
+      const paginationLinks = document.querySelectorAll('td.aca_pagination_td a, .ACA_Pagination a');
+      let currentFound = false;
+
+      for (const link of paginationLinks) {
+        const parent = link.parentElement;
+        const isSelected = link.classList.contains('SelectedPageButton') ||
+                          parent?.querySelector('.SelectedPageButton') !== null;
+
+        if (currentFound && link.textContent?.match(/^\d+$/)) {
+          // This is the next page link
+          (link as HTMLElement).click();
+          return true;
+        }
+
+        if (link.classList.contains('SelectedPageButton') ||
+            link.textContent?.toLowerCase().includes('next')) {
+          currentFound = true;
+        }
+      }
+
+      // Look for explicit Next button
+      const nextBtn = document.querySelector('a[id*="Next"]:not([disabled]), a:contains("Next")');
+      if (nextBtn && !nextBtn.classList.contains('disabled')) {
+        (nextBtn as HTMLElement).click();
+        return true;
+      }
+
+      return false;
+    });
+
+    if (hasNext) {
+      console.log(`[${JURISDICTION}] Navigated to next page via JavaScript`);
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
+      return true;
+    }
+
+    console.log(`[${JURISDICTION}] No more pages available`);
+    return false;
+  } catch (error) {
+    console.log(`[${JURISDICTION}] Error checking pagination:`, error);
+    return false;
+  }
 }
 
 async function extractPermitDetails(page: Page, permitNumber: string): Promise<PermitData> {
