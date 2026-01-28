@@ -3,6 +3,7 @@ import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Permits from './pages/Permits';
 import PermitDetail from './pages/PermitDetail';
+import Pipeline from './pages/Pipeline';
 
 function App() {
   return (
@@ -11,6 +12,7 @@ function App() {
         <Route index element={<Dashboard />} />
         <Route path="permits" element={<Permits />} />
         <Route path="permits/:id" element={<PermitDetail />} />
+        <Route path="pipeline" element={<Pipeline />} />
       </Route>
     </Routes>
   );

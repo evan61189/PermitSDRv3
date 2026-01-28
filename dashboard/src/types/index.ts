@@ -19,6 +19,15 @@ export type ProjectType =
 
 export type OpportunityRating = 'hot' | 'warm' | 'cold' | 'not_relevant';
 
+export type PipelineStage =
+  | 'lead'
+  | 'researching'
+  | 'contact_made'
+  | 'meeting_booked'
+  | 'not_interested'
+  | 'won'
+  | 'lost';
+
 export interface Permit {
   id: string;
   permit_number: string;
@@ -44,6 +53,7 @@ export interface Permit {
   detail_url?: string;
   latitude?: number;
   longitude?: number;
+  pipeline_stage?: PipelineStage;
   created_at: string;
   updated_at: string;
 }
@@ -96,4 +106,17 @@ export const OPPORTUNITY_COLORS: Record<OpportunityRating, { bg: string; text: s
   warm: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
   cold: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
   not_relevant: { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' },
+};
+
+export const PIPELINE_STAGE_CONFIG: Record<
+  PipelineStage,
+  { label: string; color: string; bgColor: string; textColor: string; order: number }
+> = {
+  lead: { label: 'Lead', color: '#6366f1', bgColor: 'bg-indigo-50', textColor: 'text-indigo-700', order: 1 },
+  researching: { label: 'Researching', color: '#8b5cf6', bgColor: 'bg-purple-50', textColor: 'text-purple-700', order: 2 },
+  contact_made: { label: 'Contact Made', color: '#f59e0b', bgColor: 'bg-amber-50', textColor: 'text-amber-700', order: 3 },
+  meeting_booked: { label: 'Meeting Booked', color: '#10b981', bgColor: 'bg-emerald-50', textColor: 'text-emerald-700', order: 4 },
+  not_interested: { label: 'Not Interested', color: '#6b7280', bgColor: 'bg-gray-50', textColor: 'text-gray-700', order: 5 },
+  won: { label: 'Won', color: '#22c55e', bgColor: 'bg-green-50', textColor: 'text-green-700', order: 6 },
+  lost: { label: 'Lost', color: '#ef4444', bgColor: 'bg-red-50', textColor: 'text-red-700', order: 7 },
 };

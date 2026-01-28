@@ -1,14 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import type { PermitWithScore, DashboardStats, Jurisdiction, ProjectType, OpportunityRating } from '../types';
+import type { PermitWithScore, DashboardStats, Jurisdiction, ProjectType, OpportunityRating, PipelineStage } from '../types';
 
 export interface PermitFilters {
   jurisdiction?: Jurisdiction;
   projectType?: ProjectType;
   opportunityRating?: OpportunityRating;
+  pipelineStage?: PipelineStage;
   search?: string;
   minScore?: number;
   minValue?: number;
+  dateFrom?: string;
+  dateTo?: string;
   sortBy?: 'created_at' | 'overall_score' | 'submission_date' | 'estimated_value';
   sortOrder?: 'asc' | 'desc';
   limit?: number;
@@ -35,6 +38,10 @@ export function usePermits(filters: PermitFilters = {}) {
         query = query.eq('opportunity_rating', filters.opportunityRating);
       }
 
+      if (filters.pipelineStage) {
+        query = query.eq('pipeline_stage', filters.pipelineStage);
+      }
+
       if (filters.search) {
         query = query.or(
           `description.ilike.%${filters.search}%,address.ilike.%${filters.search}%,permit_number.ilike.%${filters.search}%`
@@ -47,6 +54,14 @@ export function usePermits(filters: PermitFilters = {}) {
 
       if (filters.minValue !== undefined) {
         query = query.gte('estimated_value', filters.minValue);
+      }
+
+      // Date range filtering (default to last 30 days if not specified)
+      if (filters.dateFrom) {
+        query = query.gte('created_at', filters.dateFrom);
+      }
+      if (filters.dateTo) {
+        query = query.lte('created_at', filters.dateTo);
       }
 
       const sortBy = filters.sortBy || 'created_at';
@@ -213,6 +228,71 @@ export function useDeleteAllPermits() {
       queryClient.invalidateQueries({ queryKey: ['permits-by-type'] });
       queryClient.invalidateQueries({ queryKey: ['permits-by-jurisdiction'] });
       queryClient.invalidateQueries({ queryKey: ['hot-opportunities'] });
+    },
+  });
+}
+
+export function useUpdatePipelineStage() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ permitId, stage }: { permitId: string; stage: PipelineStage }) => {
+      const { data, error } = await supabase
+        .from('permits')
+        .update({ pipeline_stage: stage, updated_at: new Date().toISOString() })
+        .eq('id', permitId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      // Invalidate queries to refresh the UI
+      queryClient.invalidateQueries({ queryKey: ['permits'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline'] });
+      queryClient.invalidateQueries({ queryKey: ['permit'] });
+    },
+  });
+}
+
+export function usePermitsByPipelineStage(dateFrom?: string, dateTo?: string) {
+  return useQuery({
+    queryKey: ['pipeline', dateFrom, dateTo],
+    queryFn: async () => {
+      let query = supabase
+        .from('permits_with_scores')
+        .select('*')
+        .order('overall_score', { ascending: false, nullsFirst: false });
+
+      if (dateFrom) {
+        query = query.gte('created_at', dateFrom);
+      }
+      if (dateTo) {
+        query = query.lte('created_at', dateTo);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      // Group by pipeline stage
+      const byStage: Record<PipelineStage, PermitWithScore[]> = {
+        lead: [],
+        researching: [],
+        contact_made: [],
+        meeting_booked: [],
+        not_interested: [],
+        won: [],
+        lost: [],
+      };
+
+      for (const permit of data || []) {
+        const stage = (permit.pipeline_stage || 'lead') as PipelineStage;
+        byStage[stage].push(permit);
+      }
+
+      return byStage;
     },
   });
 }
