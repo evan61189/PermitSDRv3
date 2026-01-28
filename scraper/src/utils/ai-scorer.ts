@@ -1,9 +1,181 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { Permit, AIScore, OpportunityRating } from '../types/index.js';
+import type { Permit, AIScore, OpportunityRating, ProjectType } from '../types/index.js';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+// Interface for AI extraction result
+export interface AIExtractedPermit {
+  address: string;
+  description: string;
+  recordType: string;
+  status: string;
+  applicantName?: string;
+  contractorName?: string;
+  estimatedValue?: number;
+  squareFootage?: number;
+  projectType: ProjectType;
+  // Scoring included
+  overallScore: number;
+  opportunityRating: OpportunityRating;
+  reasoning: string;
+  keywordsDetected: string[];
+  recommendedActions: string[];
+}
+
+const EXTRACTION_AND_SCORING_PROMPT = `You are an AI assistant that extracts permit data and scores opportunities for Clipper Construction, a commercial general contractor in the Maryland/DC area.
+
+Clipper Construction specializes in:
+- Commercial tenant improvements and fit-outs
+- Office renovations and buildouts
+- Retail construction and renovations
+- Medical/dental office buildouts
+- Restaurant and hospitality construction
+- Multi-family residential construction
+- Ground-up commercial construction
+
+They are NOT interested in:
+- Single-family residential projects
+- Single trade work (electrical only, plumbing only, HVAC only)
+- Fire alarm/sprinkler-only permits
+- Roofing-only projects
+- Minor repairs and maintenance
+
+Below is the RAW TEXT from a permit detail page. Extract the relevant information and score the opportunity.
+
+PERMIT NUMBER: {permit_number}
+JURISDICTION: {jurisdiction}
+
+RAW PAGE TEXT:
+---
+{page_text}
+---
+
+Extract and return the following as JSON:
+
+1. EXTRACTED DATA:
+   - address: The work location/project address (full street address if available)
+   - description: The description of work / project description (the actual work being done)
+   - record_type: The permit/record type
+   - status: Current permit status
+   - applicant_name: Applicant or owner name if shown
+   - contractor_name: Contractor name if shown
+   - estimated_value: Estimated project value as a number (null if not shown)
+   - square_footage: Square footage as a number (null if not shown)
+   - project_type: One of: "commercial_new", "commercial_renovation", "residential_new", "residential_renovation", "industrial", "mixed_use", "electrical", "plumbing", "hvac", "roofing", "demolition", "other"
+
+2. SCORING (0-100 scale):
+   - overall_score: How good an opportunity this is for Clipper (0-100)
+   - opportunity_rating: "hot" (75+), "warm" (50-74), "cold" (25-49), or "not_relevant" (<25)
+   - reasoning: 2-3 sentences explaining why this is or isn't a good fit
+   - keywords_detected: Key terms that influenced your assessment
+   - recommended_actions: What should Clipper do? (e.g., "Contact applicant", "Monitor project", "Skip - not relevant")
+
+Respond ONLY with valid JSON:
+{
+  "address": "string",
+  "description": "string",
+  "record_type": "string",
+  "status": "string",
+  "applicant_name": "string or null",
+  "contractor_name": "string or null",
+  "estimated_value": "number or null",
+  "square_footage": "number or null",
+  "project_type": "string",
+  "overall_score": number,
+  "opportunity_rating": "hot" | "warm" | "cold" | "not_relevant",
+  "reasoning": "string",
+  "keywords_detected": ["string"],
+  "recommended_actions": ["string"]
+}`;
+
+export async function extractAndScorePermit(
+  permitNumber: string,
+  jurisdiction: string,
+  pageText: string
+): Promise<AIExtractedPermit> {
+  const prompt = EXTRACTION_AND_SCORING_PROMPT
+    .replace('{permit_number}', permitNumber)
+    .replace('{jurisdiction}', jurisdiction)
+    .replace('{page_text}', pageText.substring(0, 15000)); // Limit text to avoid token limits
+
+  try {
+    console.log(`[AI] Extracting and scoring permit ${permitNumber}...`);
+
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1500,
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+    });
+
+    const responseText = message.content[0];
+    if (responseText.type !== 'text') {
+      throw new Error('Unexpected response type from Anthropic');
+    }
+
+    // Extract JSON from response
+    let jsonStr = responseText.text.trim();
+    if (jsonStr.startsWith('```json')) {
+      jsonStr = jsonStr.slice(7);
+    } else if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.slice(3);
+    }
+    if (jsonStr.endsWith('```')) {
+      jsonStr = jsonStr.slice(0, -3);
+    }
+    jsonStr = jsonStr.trim();
+
+    const parsed = JSON.parse(jsonStr);
+
+    console.log(`[AI] Extracted - Address: "${parsed.address?.substring(0, 30)}...", Score: ${parsed.overall_score}, Rating: ${parsed.opportunity_rating}`);
+
+    return {
+      address: parsed.address || '',
+      description: parsed.description || '',
+      recordType: parsed.record_type || '',
+      status: parsed.status || '',
+      applicantName: parsed.applicant_name || undefined,
+      contractorName: parsed.contractor_name || undefined,
+      estimatedValue: parsed.estimated_value || undefined,
+      squareFootage: parsed.square_footage || undefined,
+      projectType: validateProjectType(parsed.project_type),
+      overallScore: Math.min(100, Math.max(0, parsed.overall_score || 0)),
+      opportunityRating: validateRating(parsed.opportunity_rating),
+      reasoning: parsed.reasoning || '',
+      keywordsDetected: parsed.keywords_detected || [],
+      recommendedActions: parsed.recommended_actions || [],
+    };
+  } catch (error) {
+    console.error(`[AI] Error extracting permit ${permitNumber}:`, error);
+    // Return minimal data on error
+    return {
+      address: '',
+      description: '',
+      recordType: '',
+      status: '',
+      projectType: 'other',
+      overallScore: 0,
+      opportunityRating: 'not_relevant',
+      reasoning: 'Error during AI extraction: ' + (error instanceof Error ? error.message : 'Unknown error'),
+      keywordsDetected: [],
+      recommendedActions: [],
+    };
+  }
+}
+
+function validateProjectType(type: string): ProjectType {
+  const validTypes: ProjectType[] = [
+    'commercial_new', 'commercial_renovation', 'residential_new', 'residential_renovation',
+    'industrial', 'mixed_use', 'electrical', 'plumbing', 'hvac', 'roofing', 'demolition', 'other'
+  ];
+  return validTypes.includes(type as ProjectType) ? (type as ProjectType) : 'other';
+}
 
 const SCORING_PROMPT = `You are an AI assistant that scores construction permit opportunities for Clipper Construction, a commercial general contractor in the Maryland/DC area.
 
