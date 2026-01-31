@@ -1,0 +1,53 @@
+name: Backfill AI Scores
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run mode (no changes will be made)'
+        required: false
+        type: boolean
+        default: true
+      jurisdiction:
+        description: 'Filter by jurisdiction (leave empty for all)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - howard_county_md
+          - baltimore_city_md
+          - anne_arundel_county_md
+          - carroll_county_md
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: scraper
+        run: npm install
+
+      - name: Run backfill script
+        working-directory: scraper
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          ARGS=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          if [ -n "${{ inputs.jurisdiction }}" ]; then
+            ARGS="$ARGS --jurisdiction=${{ inputs.jurisdiction }}"
+          fi
+          echo "Running: npx tsx src/scripts/backfill-ai-scores.ts $ARGS"
+          npx tsx src/scripts/backfill-ai-scores.ts $ARGS
