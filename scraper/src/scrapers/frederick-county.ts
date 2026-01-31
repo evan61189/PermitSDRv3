@@ -624,6 +624,12 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
   };
 
   try {
+    // Wait for page to load
+    await page.waitForTimeout(1000);
+
+    // Expand the "Information" section to get the description of work
+    await expandInformationSection(page);
+
     // Get full page text for AI extraction
     const pageText = await page.evaluate(() => document.body.innerText);
     permitData.pageText = pageText;
@@ -645,6 +651,119 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
   }
 
   return permitData;
+}
+
+async function expandInformationSection(page: Page): Promise<void> {
+  console.log(`[${JURISDICTION}] Looking for Information section to expand...`);
+
+  // Various selectors for expandable Information sections
+  const informationSelectors = [
+    // Accordion/collapsible patterns
+    'button:has-text("Information")',
+    'a:has-text("Information")',
+    '[data-toggle="collapse"]:has-text("Information")',
+    '[aria-controls]:has-text("Information")',
+    '.accordion-header:has-text("Information")',
+    '.panel-heading:has-text("Information")',
+    '.card-header:has-text("Information")',
+    '.collapse-header:has-text("Information")',
+    'h2:has-text("Information")',
+    'h3:has-text("Information")',
+    'h4:has-text("Information")',
+    // CIVICS-specific patterns
+    '.section-header:has-text("Information")',
+    '.expandable:has-text("Information")',
+    '[class*="expand"]:has-text("Information")',
+    '[class*="collapse"]:has-text("Information")',
+    // Generic clickable headers
+    'div[role="button"]:has-text("Information")',
+    'span[role="button"]:has-text("Information")',
+  ];
+
+  for (const selector of informationSelectors) {
+    try {
+      const element = page.locator(selector).first();
+      if (await element.isVisible({ timeout: 1000 })) {
+        // Check if it's collapsed (might have aria-expanded="false" or similar)
+        const isCollapsed = await element.evaluate(el => {
+          const ariaExpanded = el.getAttribute('aria-expanded');
+          const hasCollapsedClass = el.classList.contains('collapsed');
+          const parentCollapsed = el.closest('.collapsed') !== null;
+          // If aria-expanded is explicitly false, or has collapsed class
+          return ariaExpanded === 'false' || hasCollapsedClass || parentCollapsed;
+        });
+
+        // Click to expand if collapsed, or click anyway if we can't determine state
+        await element.scrollIntoViewIfNeeded();
+        await element.click();
+        await page.waitForTimeout(1000);
+        console.log(`[${JURISDICTION}] Expanded Information section using selector: ${selector}`);
+        return;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  // Try finding any element with "Information" text and a clickable parent/sibling
+  try {
+    const infoTexts = page.locator('*:has-text("Information")');
+    const count = await infoTexts.count();
+
+    for (let i = 0; i < Math.min(count, 15); i++) {
+      const el = infoTexts.nth(i);
+      try {
+        const text = await el.textContent();
+        // Look for standalone "Information" header
+        if (text && text.trim().toLowerCase() === 'information') {
+          // Try clicking it or a nearby toggle
+          const isClickable = await el.evaluate(e => {
+            const tagName = e.tagName.toLowerCase();
+            return ['button', 'a', 'h2', 'h3', 'h4', 'h5'].includes(tagName) ||
+                   e.classList.contains('clickable') ||
+                   e.getAttribute('role') === 'button' ||
+                   e.style.cursor === 'pointer';
+          });
+
+          if (isClickable || await el.isVisible()) {
+            await el.scrollIntoViewIfNeeded();
+            await el.click();
+            await page.waitForTimeout(1000);
+            console.log(`[${JURISDICTION}] Clicked Information header`);
+            return;
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+  } catch {
+    // Continue
+  }
+
+  // Also try to expand any other collapsed sections that might have relevant info
+  try {
+    const collapsedSections = page.locator('[aria-expanded="false"], .collapsed, [class*="collapse"]:not(.show)');
+    const count = await collapsedSections.count();
+
+    for (let i = 0; i < Math.min(count, 5); i++) {
+      const section = collapsedSections.nth(i);
+      try {
+        const text = await section.textContent();
+        if (text && (text.toLowerCase().includes('information') || text.toLowerCase().includes('detail') || text.toLowerCase().includes('description'))) {
+          await section.click();
+          await page.waitForTimeout(500);
+          console.log(`[${JURISDICTION}] Expanded collapsed section containing relevant info`);
+        }
+      } catch {
+        continue;
+      }
+    }
+  } catch {
+    // Continue
+  }
+
+  console.log(`[${JURISDICTION}] Information section may already be expanded or not found`);
 }
 
 function transformPermit(raw: PermitData): Omit<Permit, 'id' | 'created_at' | 'updated_at'> | null {
