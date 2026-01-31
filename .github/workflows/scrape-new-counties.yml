@@ -1,10 +1,9 @@
 name: Scrape Carroll County
 
 on:
-  # Separate schedule from existing scrapers - runs on different days
   schedule:
-    # Run every 3 days at 8 AM UTC (3 AM EST) - offset from main scraper
-    - cron: '0 8 1,4,7,10,13,16,19,22,25,28 * *'
+    # Run every 3 days at 6 AM UTC (1 AM EST) - same schedule as main scraper
+    - cron: '0 6 */3 * *'
   workflow_dispatch:
     inputs:
       start_date:
