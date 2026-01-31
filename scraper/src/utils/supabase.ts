@@ -66,7 +66,8 @@ export async function upsertPermits(permits: Omit<Permit, 'id' | 'created_at' | 
         permit.address,
         permit.city,
         permit.state,
-        permit.zip_code
+        permit.zip_code,
+        permit.county
       );
 
       if (coords) {

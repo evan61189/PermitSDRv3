@@ -794,17 +794,43 @@ function transformPermit(raw: PermitData, recordType: string): Omit<Permit, 'id'
 }
 
 function parseAddress(address: string): { street: string; city?: string; zip?: string } {
+  if (!address) return { street: '' };
+
   const parts = address.split(',').map(p => p.trim());
+  const zipMatch = address.match(/\d{5}(-\d{4})?/);
+  const zip = zipMatch ? zipMatch[0].substring(0, 5) : undefined;
+
+  // Common Anne Arundel County cities
+  const anneArundelCities = [
+    'Annapolis', 'Glen Burnie', 'Severna Park', 'Odenton', 'Crofton',
+    'Arnold', 'Pasadena', 'Severn', 'Millersville', 'Gambrills',
+    'Linthicum', 'Hanover', 'Brooklyn Park', 'Edgewater', 'Davidsonville',
+    'Crownsville', 'Riva', 'Mayo', 'Shady Side', 'Deale',
+    'Lothian', 'Harwood', 'Galesville', 'West River', 'Friendship',
+    'Tracys Landing', 'Churchton', 'Owensville', 'Bristol', 'Herald Harbor',
+    'Cape St Claire', 'Lake Shore', 'Curtis Bay', 'Fort Meade', 'Jessup'
+  ];
+
+  // Try to find city in the address
+  let city: string | undefined;
+  const addressUpper = address.toUpperCase();
+  for (const c of anneArundelCities) {
+    if (addressUpper.includes(c.toUpperCase())) {
+      city = c;
+      break;
+    }
+  }
+
   if (parts.length >= 2) {
-    const lastPart = parts[parts.length - 1];
-    const zipMatch = lastPart.match(/\d{5}/);
+    // If we have multiple parts, first part is usually the street
     return {
       street: parts[0],
-      city: parts.length > 2 ? parts[1] : undefined,
-      zip: zipMatch ? zipMatch[0] : undefined,
+      city: city || (parts.length > 2 ? parts[1].replace(/\s*(MD|Maryland)\s*\d{5}.*$/i, '').trim() : undefined),
+      zip,
     };
   }
-  return { street: address };
+
+  return { street: address.replace(/,?\s*(MD|Maryland)?\s*\d{5}.*$/i, '').trim(), city, zip };
 }
 
 function parseDate(dateStr: string): string | undefined {
