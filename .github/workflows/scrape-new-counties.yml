@@ -1,4 +1,4 @@
-name: Scrape Carroll County
+name: Scrape New Counties (Carroll & Frederick)
 
 on:
   schedule:
@@ -6,6 +6,14 @@ on:
     - cron: '0 6 */3 * *'
   workflow_dispatch:
     inputs:
+      jurisdiction:
+        description: 'Jurisdiction to scrape (leave empty for all)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - 'carroll_county_md'
+          - 'frederick_county_md'
       start_date:
         description: 'Start date (YYYY-MM-DD format, e.g., 2025-01-01)'
         required: false
@@ -16,7 +24,7 @@ on:
         type: string
 
 jobs:
-  scrape-carroll-county:
+  scrape-new-counties:
     runs-on: ubuntu-latest
 
     steps:
@@ -36,17 +44,25 @@ jobs:
         working-directory: scraper
         run: npx playwright install chromium --with-deps
 
-      - name: Run Carroll County scraper
+      - name: Run new counties scraper
         working-directory: scraper
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
+          CMD="npx tsx src/index-new-counties.ts"
+
+          if [ -n "${{ inputs.jurisdiction }}" ]; then
+            CMD="$CMD --jurisdiction=${{ inputs.jurisdiction }}"
+          fi
+
           if [ -n "${{ inputs.start_date }}" ] && [ -n "${{ inputs.end_date }}" ]; then
             echo "Running with custom date range: ${{ inputs.start_date }} to ${{ inputs.end_date }}"
-            npx tsx src/index-new-counties.ts --start-date=${{ inputs.start_date }} --end-date=${{ inputs.end_date }}
+            CMD="$CMD --start-date=${{ inputs.start_date }} --end-date=${{ inputs.end_date }}"
           else
             echo "Running with default date range (last 30 days)"
-            npx tsx src/index-new-counties.ts
           fi
+
+          echo "Executing: $CMD"
+          eval $CMD

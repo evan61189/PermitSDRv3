@@ -2,11 +2,13 @@ export { scrapeHowardCounty } from './howard-county.js';
 export { scrapeBaltimoreCityMD } from './baltimore-city.js';
 export { scrapeAnneArundelCounty } from './anne-arundel-county.js';
 export { scrapeCarrollCounty } from './carroll-county.js';
+export { scrapeFrederickcounty } from './frederick-county.js';
 
 import { scrapeHowardCounty } from './howard-county.js';
 import { scrapeBaltimoreCityMD } from './baltimore-city.js';
 import { scrapeAnneArundelCounty } from './anne-arundel-county.js';
 import { scrapeCarrollCounty } from './carroll-county.js';
+import { scrapeFrederickcounty } from './frederick-county.js';
 import type { Jurisdiction, ScraperResult } from '../types/index.js';
 
 export interface DateRange {
@@ -23,9 +25,10 @@ export const originalScrapers: Partial<Record<Jurisdiction, ScraperFunction>> = 
   anne_arundel_county_md: scrapeAnneArundelCounty,
 };
 
-// Carroll County scraper (separate workflow)
+// New county scrapers (separate workflow - non-Accela systems)
 export const newCountyScrapers: Partial<Record<Jurisdiction, ScraperFunction>> = {
   carroll_county_md: scrapeCarrollCounty,
+  frederick_county_md: scrapeFrederickcounty,
 };
 
 // All scrapers combined
@@ -34,6 +37,7 @@ export const scrapers: Partial<Record<Jurisdiction, ScraperFunction>> = {
   baltimore_city_md: scrapeBaltimoreCityMD,
   anne_arundel_county_md: scrapeAnneArundelCounty,
   carroll_county_md: scrapeCarrollCounty,
+  frederick_county_md: scrapeFrederickcounty,
 };
 
 export async function scrapeAll(dateRange?: DateRange): Promise<ScraperResult[]> {
