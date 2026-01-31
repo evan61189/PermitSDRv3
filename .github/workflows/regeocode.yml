@@ -1,0 +1,38 @@
+name: Re-geocode Permits
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Maximum number of permits to re-geocode (leave empty for all)'
+        required: false
+        type: number
+
+jobs:
+  regeocode:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: scraper
+        run: npm install
+
+      - name: Run re-geocode script
+        working-directory: scraper
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            npx tsx src/scripts/regeocode-permits.ts --limit=${{ github.event.inputs.limit }}
+          else
+            npx tsx src/scripts/regeocode-permits.ts
+          fi

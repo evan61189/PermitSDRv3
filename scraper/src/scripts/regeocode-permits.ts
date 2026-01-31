@@ -1,6 +1,6 @@
 /**
  * Re-geocode permits that are missing latitude/longitude coordinates.
- * Run with: npx tsx src/scripts/regeocode-permits.ts
+ * Run with: npx tsx src/scripts/regeocode-permits.ts [--limit=N]
  */
 
 import 'dotenv/config';
@@ -15,19 +15,33 @@ if (!supabaseUrl || !supabaseKey) {
   process.exit(1);
 }
 
+// Parse command line arguments
+const args = process.argv.slice(2);
+const limitArg = args.find((arg) => arg.startsWith('--limit='));
+const limit = limitArg ? parseInt(limitArg.split('=')[1], 10) : undefined;
+
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function regeocodePermits() {
   console.log('========================================');
   console.log('Re-geocoding permits with missing coordinates');
+  if (limit) {
+    console.log(`Limit: ${limit} permits`);
+  }
   console.log('========================================\n');
 
   // Fetch permits without coordinates
-  const { data: permits, error } = await supabase
+  let query = supabase
     .from('permits')
     .select('id, permit_number, address, city, county, state, zip_code, source_jurisdiction')
     .or('latitude.is.null,longitude.is.null')
     .order('created_at', { ascending: false });
+
+  if (limit) {
+    query = query.limit(limit);
+  }
+
+  const { data: permits, error } = await query;
 
   if (error) {
     console.error('Error fetching permits:', error);
