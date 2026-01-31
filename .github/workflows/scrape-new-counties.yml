@@ -1,0 +1,65 @@
+name: Scrape New Counties (Baltimore County & Carroll County)
+
+on:
+  # Separate schedule from existing scrapers - runs on different days
+  schedule:
+    # Run every 3 days at 8 AM UTC (3 AM EST) - offset from main scraper
+    - cron: '0 8 1,4,7,10,13,16,19,22,25,28 * *'
+  workflow_dispatch:
+    inputs:
+      jurisdiction:
+        description: 'Jurisdiction to scrape (leave empty for all new counties)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - baltimore_county_md
+          - carroll_county_md
+      start_date:
+        description: 'Start date for permit search (YYYY-MM-DD)'
+        required: false
+        type: string
+      end_date:
+        description: 'End date for permit search (YYYY-MM-DD)'
+        required: false
+        type: string
+
+jobs:
+  scrape-new-counties:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: scraper
+        run: npm install
+
+      - name: Install Playwright browsers
+        working-directory: scraper
+        run: npx playwright install chromium --with-deps
+
+      - name: Run new counties scraper
+        working-directory: scraper
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          ARGS=""
+          if [ -n "${{ github.event.inputs.jurisdiction }}" ]; then
+            ARGS="$ARGS --jurisdiction=${{ github.event.inputs.jurisdiction }}"
+          fi
+          if [ -n "${{ github.event.inputs.start_date }}" ]; then
+            ARGS="$ARGS --start-date=${{ github.event.inputs.start_date }}"
+          fi
+          if [ -n "${{ github.event.inputs.end_date }}" ]; then
+            ARGS="$ARGS --end-date=${{ github.event.inputs.end_date }}"
+          fi
+          npx tsx src/index-new-counties.ts $ARGS

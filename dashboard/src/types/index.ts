@@ -1,7 +1,9 @@
 export type Jurisdiction =
   | 'howard_county_md'
   | 'baltimore_city_md'
-  | 'anne_arundel_county_md';
+  | 'anne_arundel_county_md'
+  | 'baltimore_county_md'
+  | 'carroll_county_md';
 
 export type ProjectType =
   | 'commercial_new'
@@ -109,6 +111,8 @@ export const JURISDICTION_NAMES: Record<Jurisdiction, string> = {
   howard_county_md: 'Howard County, MD',
   baltimore_city_md: 'Baltimore City, MD',
   anne_arundel_county_md: 'Anne Arundel County, MD',
+  baltimore_county_md: 'Baltimore County, MD',
+  carroll_county_md: 'Carroll County, MD',
 };
 
 export const PROJECT_TYPE_NAMES: Record<ProjectType, string> = {
