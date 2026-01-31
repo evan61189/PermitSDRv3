@@ -21,6 +21,43 @@ const geocodeCache = new Map<string, GeocodingResult | null>();
 let lastRequestTime = 0;
 const MIN_REQUEST_INTERVAL = 1100; // 1.1 seconds to be safe
 
+/**
+ * Strip suite, unit, apartment, floor, and similar secondary address components
+ * that can interfere with geocoding accuracy
+ */
+function stripSecondaryAddress(address: string): string {
+  // Patterns to remove (case insensitive):
+  // - Suite/Ste/Ste. followed by number/letter
+  // - Unit followed by number/letter
+  // - Apt/Apartment followed by number/letter
+  // - # followed by number/letter
+  // - Floor/Fl followed by number
+  // - Building/Bldg followed by number/letter
+  // - Room/Rm followed by number
+  const patterns = [
+    /\s*,?\s*#\s*[A-Z0-9-]+$/i,
+    /\s*,?\s*(?:suite|ste\.?)\s*[A-Z0-9-]+$/i,
+    /\s*,?\s*(?:unit)\s*[A-Z0-9-]+$/i,
+    /\s*,?\s*(?:apt\.?|apartment)\s*[A-Z0-9-]+$/i,
+    /\s*,?\s*(?:floor|fl\.?)\s*[0-9]+$/i,
+    /\s*,?\s*(?:building|bldg\.?)\s*[A-Z0-9-]+$/i,
+    /\s*,?\s*(?:room|rm\.?)\s*[0-9]+$/i,
+    // Handle mid-address patterns like "123 Main St Suite 100 City"
+    /\s+(?:suite|ste\.?)\s+[A-Z0-9-]+\s*,?/i,
+    /\s+(?:unit)\s+[A-Z0-9-]+\s*,?/i,
+    /\s+(?:apt\.?|apartment)\s+[A-Z0-9-]+\s*,?/i,
+    /\s+#[A-Z0-9-]+\s*,?/i,
+  ];
+
+  let cleaned = address;
+  for (const pattern of patterns) {
+    cleaned = cleaned.replace(pattern, ' ');
+  }
+
+  // Clean up extra whitespace and trailing commas
+  return cleaned.replace(/\s+/g, ' ').replace(/,\s*$/, '').trim();
+}
+
 async function rateLimit(): Promise<void> {
   const now = Date.now();
   const timeSinceLastRequest = now - lastRequestTime;
@@ -45,9 +82,12 @@ export async function geocodeAddress(
   zipCode?: string,
   county?: string
 ): Promise<GeocodingResult | null> {
+  // Strip suite/unit numbers that can interfere with geocoding
+  const cleanedAddress = stripSecondaryAddress(address);
+
   // Build full address string - include county for better accuracy
   // For Maryland counties, the county name helps Nominatim find the right location
-  const parts = [address, city, county, state, zipCode].filter(Boolean);
+  const parts = [cleanedAddress, city, county, state, zipCode].filter(Boolean);
   const fullAddress = parts.join(', ');
 
   // Check cache first
@@ -80,7 +120,7 @@ export async function geocodeAddress(
       // Try again without the city if we have county (city might be wrong)
       if (county && city) {
         console.log(`[geocoder] No results for: ${fullAddress}, trying with county only...`);
-        const fallbackParts = [address, county, state, zipCode].filter(Boolean);
+        const fallbackParts = [cleanedAddress, county, state, zipCode].filter(Boolean);
         const fallbackAddress = fallbackParts.join(', ');
         const fallbackEncoded = encodeURIComponent(fallbackAddress);
 
