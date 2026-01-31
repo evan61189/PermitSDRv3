@@ -12,11 +12,13 @@ import {
   Edit2,
   Check,
   X,
+  ClipboardList,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { usePermit, useUpdateProjectContact } from '../hooks/usePermits';
 import OpportunityBadge from '../components/OpportunityBadge';
 import ScoreGauge from '../components/ScoreGauge';
+import TaskList from '../components/TaskList';
 import { PROJECT_TYPE_NAMES, JURISDICTION_NAMES, PIPELINE_STAGE_CONFIG } from '../types';
 
 export default function PermitDetail() {
@@ -232,6 +234,15 @@ export default function PermitDetail() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Tasks Section */}
+      <div className="card p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <ClipboardList className="w-5 h-5 text-gray-400" />
+          <h2 className="text-lg font-semibold text-gray-900">Follow-up Tasks</h2>
+        </div>
+        <TaskList permitId={permit.id} />
       </div>
 
       {/* AI Scoring Section */}

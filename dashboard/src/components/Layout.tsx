@@ -1,10 +1,11 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, FileText, Kanban } from 'lucide-react';
+import { LayoutDashboard, FileText, Kanban, ClipboardList } from 'lucide-react';
 import clsx from 'clsx';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Pipeline', href: '/pipeline', icon: Kanban },
+  { name: 'Tasks', href: '/tasks', icon: ClipboardList },
   { name: 'Permits', href: '/permits', icon: FileText },
 ];
 
