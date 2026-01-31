@@ -1,11 +1,10 @@
--- Add new jurisdictions for Baltimore County and Carroll County
--- Run this migration to support the new county scrapers
+-- Add Carroll County jurisdiction
+-- Run this migration to support the Carroll County scraper
 
--- Add new values to the jurisdiction enum
-ALTER TYPE jurisdiction ADD VALUE IF NOT EXISTS 'baltimore_county_md';
+-- Add Carroll County to the jurisdiction enum
 ALTER TYPE jurisdiction ADD VALUE IF NOT EXISTS 'carroll_county_md';
 
 -- Note: In PostgreSQL, you cannot remove enum values, only add them.
--- The above statements are idempotent - they won't fail if the values already exist.
+-- The above statement is idempotent - it won't fail if the value already exists.
 
-COMMENT ON TYPE jurisdiction IS 'Supported jurisdictions: Howard County MD, Baltimore City MD, Anne Arundel County MD, Baltimore County MD, Carroll County MD';
+COMMENT ON TYPE jurisdiction IS 'Supported jurisdictions: Howard County MD, Baltimore City MD, Anne Arundel County MD, Carroll County MD';

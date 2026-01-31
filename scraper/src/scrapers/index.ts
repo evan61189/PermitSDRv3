@@ -1,13 +1,11 @@
 export { scrapeHowardCounty } from './howard-county.js';
 export { scrapeBaltimoreCityMD } from './baltimore-city.js';
 export { scrapeAnneArundelCounty } from './anne-arundel-county.js';
-export { scrapeBaltimoreCounty } from './baltimore-county.js';
 export { scrapeCarrollCounty } from './carroll-county.js';
 
 import { scrapeHowardCounty } from './howard-county.js';
 import { scrapeBaltimoreCityMD } from './baltimore-city.js';
 import { scrapeAnneArundelCounty } from './anne-arundel-county.js';
-import { scrapeBaltimoreCounty } from './baltimore-county.js';
 import { scrapeCarrollCounty } from './carroll-county.js';
 import type { Jurisdiction, ScraperResult } from '../types/index.js';
 
@@ -25,18 +23,16 @@ export const originalScrapers: Partial<Record<Jurisdiction, ScraperFunction>> = 
   anne_arundel_county_md: scrapeAnneArundelCounty,
 };
 
-// New county scrapers (separate workflow)
+// Carroll County scraper (separate workflow)
 export const newCountyScrapers: Partial<Record<Jurisdiction, ScraperFunction>> = {
-  baltimore_county_md: scrapeBaltimoreCounty,
   carroll_county_md: scrapeCarrollCounty,
 };
 
 // All scrapers combined
-export const scrapers: Record<Jurisdiction, ScraperFunction> = {
+export const scrapers: Partial<Record<Jurisdiction, ScraperFunction>> = {
   howard_county_md: scrapeHowardCounty,
   baltimore_city_md: scrapeBaltimoreCityMD,
   anne_arundel_county_md: scrapeAnneArundelCounty,
-  baltimore_county_md: scrapeBaltimoreCounty,
   carroll_county_md: scrapeCarrollCounty,
 };
 
