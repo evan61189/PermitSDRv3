@@ -11,7 +11,7 @@
 
 import 'dotenv/config';
 import { scrapeCarrollCounty } from './scrapers/carroll-county.js';
-import { upsertPermits } from './utils/supabase.js';
+import { upsertPermits, saveExtractedScores } from './utils/supabase.js';
 import type { DateRange } from './scrapers/index.js';
 
 async function main() {
@@ -58,8 +58,15 @@ async function main() {
 
     if (result.success && result.permits.length > 0) {
       console.log(`\nUpserting ${result.permits.length} Carroll County permits to database...`);
-      await upsertPermits(result.permits);
+      const savedPermits = await upsertPermits(result.permits);
       console.log('Carroll County permits saved successfully!');
+
+      // Save AI scores to the ai_scores table
+      if (savedPermits.length > 0) {
+        console.log('Saving AI scores to database...');
+        const scoresCount = await saveExtractedScores(savedPermits);
+        console.log(`Saved ${scoresCount} AI scores`);
+      }
     } else if (result.permits.length === 0) {
       console.log('No Carroll County CR- permits found.');
     }
