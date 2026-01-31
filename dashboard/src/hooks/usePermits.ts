@@ -44,7 +44,7 @@ export function usePermits(filters: PermitFilters = {}) {
 
       if (filters.search) {
         query = query.or(
-          `description.ilike.%${filters.search}%,address.ilike.%${filters.search}%,permit_number.ilike.%${filters.search}%`
+          `description.ilike.%${filters.search}%,address.ilike.%${filters.search}%,permit_number.ilike.%${filters.search}%,applicant_name.ilike.%${filters.search}%,contractor_name.ilike.%${filters.search}%`
         );
       }
 
