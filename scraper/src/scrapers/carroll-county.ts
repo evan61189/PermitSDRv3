@@ -2,23 +2,16 @@ import { Page } from 'playwright';
 import { getPage } from '../utils/browser.js';
 import { extractAndScorePermit, AIExtractedPermit } from '../utils/ai-scorer.js';
 import type { Permit, ScraperResult, Jurisdiction } from '../types/index.js';
-import type { DateRange } from './index.js';
 
 const JURISDICTION: Jurisdiction = 'carroll_county_md';
-const BASE_URL = 'https://amprod.carrollcountymd.gov/CitizenAccess/Cap/CapHome.aspx?module=Building&TabName=Building';
-const DROPDOWN_LABEL = 'Record Type';
+const BASE_URL = 'https://amprod.carrollcountymd.gov/CitizenAccess/Cap/CapHome.aspx?module=Permits&TabName=Permits&TabList=HOME%7C0%7CPermits%7C1%7CPlanning%7C2%7CLICENSES%7C3%7CCurrentTabIndex%7C1';
 
-// Commercial permit types to search for in Carroll County
+// Permit types to search for CR- prefixed records
 const PERMIT_TYPES_TO_SEARCH = [
-  'Commercial Building Permit',
-  'Commercial New Construction',
-  'Commercial Alteration',
-  'Commercial Addition',
-  'Commercial Renovation',
+  'Commercial Renovations',
+  'Commercial -New',
 ];
-
-// Default date range is last 3 days
-const DEFAULT_DATE_RANGE_DAYS = 3;
+const RECORD_PREFIX = 'CR-';
 
 interface PermitData {
   recordNumber: string;
@@ -27,7 +20,7 @@ interface PermitData {
   aiData?: AIExtractedPermit;
 }
 
-export async function scrapeCarrollCounty(dateRange?: DateRange): Promise<ScraperResult> {
+export async function scrapeCarrollCounty(): Promise<ScraperResult> {
   console.log(`[${JURISDICTION}] Starting scrape...`);
   const permits: Omit<Permit, 'id' | 'created_at' | 'updated_at'>[] = [];
   const seenPermitNumbers = new Set<string>();
@@ -36,61 +29,41 @@ export async function scrapeCarrollCounty(dateRange?: DateRange): Promise<Scrape
     const { page: browserPage, context } = await getPage();
     const page = browserPage;
 
-    // Loop through each permit type to search
+    // Loop through each permit type
     for (const permitType of PERMIT_TYPES_TO_SEARCH) {
       console.log(`[${JURISDICTION}] ========================================`);
       console.log(`[${JURISDICTION}] Searching for: ${permitType}`);
       console.log(`[${JURISDICTION}] ========================================`);
 
       try {
-        // Step 1: Navigate to page (fresh start for each permit type)
+        // Navigate to the page (fresh start for each permit type)
         console.log(`[${JURISDICTION}] Navigating to ${BASE_URL}`);
         await page.goto(BASE_URL, { waitUntil: 'networkidle', timeout: 60000 });
         await page.waitForTimeout(2000);
 
-        // Step 1b: Handle disclaimer if present
+        // Handle disclaimer if present
         await handleDisclaimer(page);
 
-        // Step 2: Find dropdown and select the permit type
-        const foundType = await selectDropdownByLabel(page, DROPDOWN_LABEL, permitType);
+        // Select permit type from dropdown
+        const foundType = await selectPermitType(page, permitType);
         if (!foundType) {
           console.log(`[${JURISDICTION}] Permit type "${permitType}" not found in dropdown, skipping...`);
           continue;
         }
 
-        // Step 3: Enter date range
-        let startDate: Date;
-        let endDate: Date;
-        if (dateRange) {
-          startDate = dateRange.startDate;
-          endDate = dateRange.endDate;
-        } else {
-          endDate = new Date();
-          startDate = new Date();
-          startDate.setDate(startDate.getDate() - DEFAULT_DATE_RANGE_DAYS);
-        }
-        console.log(`[${JURISDICTION}] Searching date range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
-        await enterDateRange(page, startDate, endDate);
-
-        // Step 4: Click search button
+        // Click the search button
         await clickSearchButton(page);
 
-        // Step 5-7: Loop through results
-        const rawPermits = await processPermitResults(page);
-        console.log(`[${JURISDICTION}] Found ${rawPermits.length} permits for "${permitType}"`);
+        // Process results, looking for CR- prefixed records
+        const rawPermits = await processPermitResults(page, seenPermitNumbers);
+        console.log(`[${JURISDICTION}] Found ${rawPermits.length} CR- permits for "${permitType}"`);
 
-        // Use AI to extract and score each permit
+        // Transform and add permits
         for (const raw of rawPermits) {
-          if (seenPermitNumbers.has(raw.recordNumber)) {
-            console.log(`[${JURISDICTION}] Skipping duplicate: ${raw.recordNumber}`);
-            continue;
-          }
-
           if (raw.aiData) {
             const permit = transformPermit(raw, permitType);
             if (permit) {
               permits.push(permit);
-              seenPermitNumbers.add(raw.recordNumber);
               console.log(`[${JURISDICTION}] Added permit: ${permit.permit_number} (Score: ${raw.aiData.overallScore}, Rating: ${raw.aiData.opportunityRating})`);
             }
           }
@@ -136,7 +109,7 @@ async function handleDisclaimer(page: Page): Promise<void> {
 }
 
 async function scrollToRenderPage(page: Page): Promise<void> {
-  console.log(`[${JURISDICTION}] Scrolling to bottom to fully render page...`);
+  console.log(`[${JURISDICTION}] Scrolling to fully render page...`);
 
   for (let i = 0; i < 10; i++) {
     await page.evaluate((step) => window.scrollBy(0, step), 500);
@@ -149,31 +122,33 @@ async function scrollToRenderPage(page: Page): Promise<void> {
   await page.waitForTimeout(500);
 }
 
-async function selectDropdownByLabel(page: Page, labelText: string, optionText: string): Promise<boolean> {
-  console.log(`[${JURISDICTION}] Looking for "${labelText}" dropdown...`);
+async function selectPermitType(page: Page, permitType: string): Promise<boolean> {
+  console.log(`[${JURISDICTION}] Looking for permit type dropdown...`);
 
   await scrollToRenderPage(page);
 
+  // Scroll to middle of page where dropdowns typically are
   const pageHeight = await page.evaluate(() => document.body.scrollHeight);
   await page.evaluate((y) => window.scrollTo(0, y), Math.floor(pageHeight * 0.25));
   await page.waitForTimeout(1000);
 
   let dropdown = null;
 
-  // Method 1: Find by label text
-  const labelSelectors = [
-    `span:has-text("${labelText}") >> xpath=ancestor::tr >> select`,
-    `td:has-text("${labelText}") >> xpath=following-sibling::td >> select`,
-    `label:has-text("${labelText}") >> xpath=following::select[1]`,
-    `text="${labelText}" >> xpath=ancestor::tr >> select`,
+  // Method 1: Find by common Accela dropdown IDs
+  const accelaSelectors = [
+    'select[id*="ddlPermitType"]',
+    'select[id*="PermitType"]',
+    'select[id*="ddlRecordType"]',
+    'select[id*="RecordType"]',
+    'select[id*="Type"]',
   ];
 
-  for (const selector of labelSelectors) {
+  for (const selector of accelaSelectors) {
     try {
       const el = page.locator(selector).first();
       if (await el.isVisible({ timeout: 2000 })) {
         dropdown = el;
-        console.log(`[${JURISDICTION}] Found dropdown via label selector`);
+        console.log(`[${JURISDICTION}] Found dropdown with selector: ${selector}`);
         break;
       }
     } catch {
@@ -181,35 +156,12 @@ async function selectDropdownByLabel(page: Page, labelText: string, optionText: 
     }
   }
 
-  // Method 2: Look for Accela-specific dropdown IDs
-  if (!dropdown) {
-    const accelaSelectors = [
-      'select[id*="ddlPermitType"]',
-      'select[id*="PermitType"]',
-      'select[id*="ddlRecordType"]',
-      'select[id*="RecordType"]',
-    ];
-
-    for (const selector of accelaSelectors) {
-      try {
-        const el = page.locator(selector).first();
-        if (await el.isVisible({ timeout: 1000 })) {
-          dropdown = el;
-          console.log(`[${JURISDICTION}] Found dropdown with Accela selector: ${selector}`);
-          break;
-        }
-      } catch {
-        continue;
-      }
-    }
-  }
-
-  // Method 3: Find dropdown containing target option keywords
+  // Method 2: Find dropdown containing option with matching text
   if (!dropdown) {
     console.log(`[${JURISDICTION}] Scanning all dropdowns for matching options...`);
     const allSelects = page.locator('select');
     const count = await allSelects.count();
-    const keywords = optionText.toLowerCase().split(' ').filter(w => w.length > 3);
+    const keywords = permitType.toLowerCase().split(' ').filter(w => w.length > 3);
 
     for (let i = 0; i < count; i++) {
       const select = allSelects.nth(i);
@@ -237,14 +189,16 @@ async function selectDropdownByLabel(page: Page, labelText: string, optionText: 
       await dropdown.scrollIntoViewIfNeeded();
       await page.waitForTimeout(500);
       const options = await dropdown.locator('option').allTextContents();
+      console.log(`[${JURISDICTION}] Available options: ${options.join(', ')}`);
 
-      const exactMatch = options.find(opt => opt.trim().toLowerCase() === optionText.toLowerCase());
-      const keywords = optionText.toLowerCase().split(' ').filter(w => w.length > 3);
+      // Find matching option (case insensitive)
+      const exactMatch = options.find(opt => opt.trim().toLowerCase() === permitType.toLowerCase());
+      const keywords = permitType.toLowerCase().split(' ').filter(w => w.length > 3);
       const keywordMatch = options.find(opt => {
         const optLower = opt.toLowerCase();
         return keywords.every(kw => optLower.includes(kw));
       });
-      const partialMatch = options.find(opt => opt.toLowerCase().includes(optionText.toLowerCase()));
+      const partialMatch = options.find(opt => opt.toLowerCase().includes(permitType.toLowerCase()));
 
       const targetOption = exactMatch || keywordMatch || partialMatch;
 
@@ -254,8 +208,7 @@ async function selectDropdownByLabel(page: Page, labelText: string, optionText: 
         await page.waitForTimeout(2000);
         return true;
       } else {
-        console.log(`[${JURISDICTION}] Warning: Could not find option "${optionText}"`);
-        console.log(`[${JURISDICTION}] Available options: ${options.slice(0, 10).join(', ')}`);
+        console.log(`[${JURISDICTION}] Warning: Could not find option "${permitType}"`);
         return false;
       }
     } catch (error) {
@@ -263,50 +216,19 @@ async function selectDropdownByLabel(page: Page, labelText: string, optionText: 
       return false;
     }
   } else {
-    console.log(`[${JURISDICTION}] Warning: No dropdown found for "${labelText}"`);
+    console.log(`[${JURISDICTION}] Warning: No permit type dropdown found`);
     return false;
   }
-}
-
-async function enterDateRange(page: Page, startDate: Date, endDate: Date): Promise<void> {
-  const startDateStr = formatDate(startDate);
-  const endDateStr = formatDate(endDate);
-  console.log(`[${JURISDICTION}] Entering date range: ${startDateStr} to ${endDateStr}`);
-
-  const startInput = page.locator('input[id*="Start" i][id*="Date" i], input[id*="From" i][id*="Date" i], input[id*="Begin" i]').first();
-  const endInput = page.locator('input[id*="End" i][id*="Date" i], input[id*="To" i][id*="Date" i]').first();
-
-  try {
-    if (await startInput.isVisible({ timeout: 2000 })) {
-      await startInput.click();
-      await startInput.clear();
-      await startInput.fill(startDateStr);
-      console.log(`[${JURISDICTION}] Set start date: ${startDateStr}`);
-    }
-  } catch {
-    console.log(`[${JURISDICTION}] Could not find start date input`);
-  }
-
-  try {
-    if (await endInput.isVisible({ timeout: 2000 })) {
-      await endInput.click();
-      await endInput.clear();
-      await endInput.fill(endDateStr);
-      console.log(`[${JURISDICTION}] Set end date: ${endDateStr}`);
-    }
-  } catch {
-    console.log(`[${JURISDICTION}] Could not find end date input`);
-  }
-
-  await page.waitForTimeout(500);
 }
 
 async function clickSearchButton(page: Page): Promise<void> {
   console.log(`[${JURISDICTION}] Looking for search button...`);
 
+  // Scroll to bottom where search button typically is
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await page.waitForTimeout(1500);
 
+  // Accela-specific red search button selectors
   const accelaButtonSelectors = [
     'a.ACA_LgButton.ACA_LgButton_FontSize:has-text("Search")',
     'a.ACA_LgButton:has-text("Search")',
@@ -360,13 +282,15 @@ async function clickSearchButton(page: Page): Promise<void> {
   await page.waitForTimeout(3000);
 }
 
-async function processPermitResults(page: Page): Promise<PermitData[]> {
+async function processPermitResults(page: Page, seenPermitNumbers: Set<string>): Promise<PermitData[]> {
   const permits: PermitData[] = [];
   let currentPage = 1;
 
+  // Scroll to see results
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await page.waitForTimeout(2000);
 
+  // Wait for results table
   try {
     await page.waitForSelector('table tbody tr, .ACA_Grid tr, [id*="GridView"] tr', { timeout: 15000 });
   } catch {
@@ -383,21 +307,30 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForTimeout(1000);
 
-    // Get permit links
-    const permitLinks = await page.$$eval('table tbody tr a, .ACA_Grid tr a, [id*="GridView"] a', links =>
+    // Get all permit links, filtering for CR- prefix
+    const permitLinks = await page.$$eval('table tbody tr a, .ACA_Grid tr a, [id*="GridView"] a', (links, prefix) =>
       links
         .filter(a => {
           const text = a.textContent?.trim() || '';
-          return text.match(/^[A-Z0-9][-A-Z0-9.]+$/i) && text.length > 5;
+          // Only include links that start with CR-
+          return text.startsWith(prefix);
         })
-        .map(a => a.textContent!.trim())
+        .map(a => a.textContent!.trim()),
+      RECORD_PREFIX
     );
 
     const uniquePermitLinks = [...new Set(permitLinks)];
-    console.log(`[${JURISDICTION}] Found ${uniquePermitLinks.length} permit links on page ${currentPage}`);
+    console.log(`[${JURISDICTION}] Found ${uniquePermitLinks.length} ${RECORD_PREFIX} permit links on page ${currentPage}`);
 
     for (let i = 0; i < uniquePermitLinks.length; i++) {
       const permitNumber = uniquePermitLinks[i];
+
+      // Skip if already seen
+      if (seenPermitNumbers.has(permitNumber)) {
+        console.log(`[${JURISDICTION}] Skipping duplicate: ${permitNumber}`);
+        continue;
+      }
+
       console.log(`[${JURISDICTION}] Processing ${i + 1}/${uniquePermitLinks.length}: ${permitNumber}`);
 
       try {
@@ -418,12 +351,14 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
         await page.waitForLoadState('networkidle', { timeout: 30000 });
         await page.waitForTimeout(2000);
 
+        // Extract permit details using AI
         const permitData = await extractPermitDetails(page, permitNumber);
         permitData.detailUrl = page.url();
 
         permits.push(permitData);
+        seenPermitNumbers.add(permitNumber);
 
-        // Navigate back
+        // Navigate back to results
         await page.goto(baseResultsUrl, { waitUntil: 'networkidle', timeout: 30000 });
         await page.waitForTimeout(2000);
 
@@ -454,6 +389,7 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
       }
     }
 
+    // Check for next page
     const hasNextPage = await checkAndClickNextPage(page);
     if (!hasNextPage) {
       console.log(`[${JURISDICTION}] No more pages to process`);
@@ -548,10 +484,12 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
   };
 
   try {
+    // Get full page text for AI extraction
     const pageText = await page.evaluate(() => document.body.innerText);
     permitData.pageText = pageText;
     console.log(`[${JURISDICTION}] Got page text (${pageText.length} chars) for ${permitNumber}`);
 
+    // Use AI to extract and score permit
     const aiData = await extractAndScorePermit(permitNumber, JURISDICTION, pageText);
     permitData.aiData = aiData;
 
@@ -631,11 +569,4 @@ function parseAddress(address: string): { street: string; city?: string; zip?: s
   }
 
   return { street: address.replace(/,?\s*(MD|Maryland)?\s*\d{5}.*$/i, '').trim(), city, zip };
-}
-
-function formatDate(date: Date): string {
-  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  const day = date.getDate().toString().padStart(2, '0');
-  const year = date.getFullYear();
-  return `${month}/${day}/${year}`;
 }
