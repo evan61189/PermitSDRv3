@@ -372,8 +372,16 @@ async function clickSearchButton(page: Page): Promise<void> {
   console.log(`[${JURISDICTION}] Could not find search button`);
 }
 
+interface PermitLink {
+  url: string;
+  permitNumber: string;
+}
+
 async function processPermitResults(page: Page, seenPermitNumbers: Set<string>): Promise<PermitData[]> {
   const permits: PermitData[] = [];
+  let processedCount = 0;
+  const maxPermits = 50; // Limit to avoid very long scrapes
+  let currentPage = 1;
 
   // Scroll to see results
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
@@ -387,125 +395,215 @@ async function processPermitResults(page: Page, seenPermitNumbers: Set<string>):
     return permits;
   }
 
-  const baseUrl = page.url();
-  let processedCount = 0;
-  const maxPermits = 50; // Limit to avoid very long scrapes
-
   while (processedCount < maxPermits) {
-    // Find all "View Details" links/buttons
-    const viewDetailsLinks = page.locator('a:has-text("View Details"), button:has-text("View Details")');
-    const count = await viewDetailsLinks.count();
+    console.log(`[${JURISDICTION}] Processing page ${currentPage}...`);
 
-    if (count === 0) {
-      console.log(`[${JURISDICTION}] No more "View Details" links found`);
-      break;
+    // First, collect all permit URLs from this page
+    const permitLinks = await collectPermitLinksFromPage(page, seenPermitNumbers);
+
+    if (permitLinks.length === 0) {
+      console.log(`[${JURISDICTION}] No new permits found on page ${currentPage}`);
+      // Still try to go to next page in case there are duplicates
+      const hasNextPage = await clickNextPage(page);
+      if (!hasNextPage) {
+        break;
+      }
+      currentPage++;
+      continue;
     }
 
-    console.log(`[${JURISDICTION}] Found ${count} "View Details" links on current page`);
+    console.log(`[${JURISDICTION}] Found ${permitLinks.length} permit links on page ${currentPage}`);
 
-    // Process each permit on the current page
-    for (let i = 0; i < count && processedCount < maxPermits; i++) {
+    // Process each permit by navigating to its detail page
+    for (const permitLink of permitLinks) {
+      if (processedCount >= maxPermits) break;
+
       try {
-        // Re-find the links each time as the page might have changed
-        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-        await page.waitForTimeout(1000);
+        console.log(`[${JURISDICTION}] Processing permit ${processedCount + 1}: ${permitLink.permitNumber}`);
 
-        const links = page.locator('a:has-text("View Details"), button:has-text("View Details")');
-        const link = links.nth(i);
-
-        if (!await link.isVisible({ timeout: 3000 })) {
-          continue;
-        }
-
-        // Try to get a permit identifier from nearby text
-        let permitNumber = `FREDERICK-${Date.now()}-${i}`;
-        try {
-          const row = link.locator('xpath=ancestor::tr | xpath=ancestor::div[contains(@class,"card")] | xpath=ancestor::div[contains(@class,"row")]').first();
-          const rowText = await row.textContent();
-          // Try to extract a permit/record number
-          const numberMatch = rowText?.match(/([A-Z]{2,}-?\d{4,}|\d{4,}-[A-Z]{2,}|\d{6,})/);
-          if (numberMatch) {
-            permitNumber = numberMatch[1];
-          }
-        } catch {
-          // Use generated number
-        }
-
-        // Skip if already processed
-        if (seenPermitNumbers.has(permitNumber)) {
-          console.log(`[${JURISDICTION}] Skipping duplicate: ${permitNumber}`);
-          continue;
-        }
-
-        console.log(`[${JURISDICTION}] Processing permit ${processedCount + 1}: ${permitNumber}`);
-
-        await link.scrollIntoViewIfNeeded();
-        await link.click();
-        await page.waitForLoadState('networkidle', { timeout: 30000 });
+        // Navigate to permit detail page
+        await page.goto(permitLink.url, { waitUntil: 'networkidle', timeout: 30000 });
         await page.waitForTimeout(2000);
 
         // Extract permit details using AI
-        const permitData = await extractPermitDetails(page, permitNumber);
-        permitData.detailUrl = page.url();
+        const permitData = await extractPermitDetails(page, permitLink.permitNumber);
+        permitData.detailUrl = permitLink.url;
 
         permits.push(permitData);
-        seenPermitNumbers.add(permitNumber);
+        seenPermitNumbers.add(permitLink.permitNumber);
         processedCount++;
 
-        // Navigate back to results
-        await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 30000 });
-        await page.waitForTimeout(2000);
-
-        // Re-apply search (page might reset)
-        await waitForPageLoad(page);
-
       } catch (error) {
-        console.error(`[${JURISDICTION}] Error processing permit:`, error);
-        try {
-          await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 30000 });
-          await page.waitForTimeout(2000);
-        } catch {
-          // Continue
-        }
+        console.error(`[${JURISDICTION}] Error processing permit ${permitLink.permitNumber}:`, error);
       }
     }
+
+    // After processing all permits on this page, go back to results and navigate to next page
+    await page.goBack({ waitUntil: 'networkidle', timeout: 30000 });
+    await page.waitForTimeout(2000);
 
     // Check for pagination / next page
     const hasNextPage = await clickNextPage(page);
     if (!hasNextPage) {
       break;
     }
+    currentPage++;
   }
 
   return permits;
 }
 
+async function collectPermitLinksFromPage(page: Page, seenPermitNumbers: Set<string>): Promise<PermitLink[]> {
+  const permitLinks: PermitLink[] = [];
+
+  // Scroll to ensure all content is loaded
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForTimeout(1000);
+
+  // Find all "View Details" links
+  const viewDetailsLinks = page.locator('a:has-text("View Details")');
+  const count = await viewDetailsLinks.count();
+
+  console.log(`[${JURISDICTION}] Found ${count} "View Details" links to collect`);
+
+  for (let i = 0; i < count; i++) {
+    try {
+      const link = viewDetailsLinks.nth(i);
+
+      // Get the href attribute
+      const href = await link.getAttribute('href');
+      if (!href) continue;
+
+      // Construct full URL
+      const fullUrl = href.startsWith('http') ? href : new URL(href, page.url()).toString();
+
+      // Try to get a permit identifier from nearby text
+      let permitNumber = `FREDERICK-${Date.now()}-${i}`;
+      try {
+        const row = link.locator('xpath=ancestor::tr | xpath=ancestor::div[contains(@class,"card")] | xpath=ancestor::div[contains(@class,"row")] | xpath=ancestor::div[contains(@class,"result")]').first();
+        const rowText = await row.textContent();
+        // Try to extract a permit/record number
+        const numberMatch = rowText?.match(/([A-Z]{2,}-?\d{4,}|\d{4,}-[A-Z]{2,}|\d{6,})/);
+        if (numberMatch) {
+          permitNumber = numberMatch[1];
+        }
+      } catch {
+        // Try to get number from URL
+        const urlMatch = href.match(/id=(\d+)|record[=/](\d+)|permit[=/](\d+)/i);
+        if (urlMatch) {
+          permitNumber = `FREDERICK-${urlMatch[1] || urlMatch[2] || urlMatch[3]}`;
+        }
+      }
+
+      // Skip if already processed
+      if (seenPermitNumbers.has(permitNumber)) {
+        console.log(`[${JURISDICTION}] Skipping duplicate: ${permitNumber}`);
+        continue;
+      }
+
+      permitLinks.push({ url: fullUrl, permitNumber });
+
+    } catch (error) {
+      console.error(`[${JURISDICTION}] Error collecting permit link ${i}:`, error);
+    }
+  }
+
+  return permitLinks;
+}
+
 async function clickNextPage(page: Page): Promise<boolean> {
   console.log(`[${JURISDICTION}] Checking for next page...`);
 
+  // Scroll to bottom to ensure pagination is visible
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForTimeout(1000);
+
   const nextSelectors = [
+    // Common pagination selectors
     'a:has-text("Next")',
     'button:has-text("Next")',
+    'a:has-text(">")',
+    'button:has-text(">")',
+    'a:has-text("»")',
+    'button:has-text("»")',
     '[aria-label="Next"]',
+    '[aria-label="Next page"]',
+    '[title="Next"]',
+    '[title="Next page"]',
     '.pagination-next',
+    '.next-page',
     'a[rel="next"]',
+    'li.next a',
+    'li.next button',
+    '.pagination li:last-child a',
+    '.pager-next a',
+    'nav[aria-label="pagination"] a:has-text("Next")',
+    // CIVICS-specific selectors
+    '.paging-container a:has-text("Next")',
+    '.paging-container button:has-text("Next")',
+    '[class*="pagination"] a:has-text("Next")',
+    '[class*="pagination"] button:has-text("Next")',
+    '[class*="pager"] a:has-text("Next")',
+    '[class*="pager"] button:has-text("Next")',
   ];
 
   for (const selector of nextSelectors) {
     try {
       const nextBtn = page.locator(selector).first();
-      if (await nextBtn.isVisible({ timeout: 2000 }) && await nextBtn.isEnabled()) {
-        await nextBtn.click();
-        await page.waitForLoadState('networkidle', { timeout: 20000 });
-        await page.waitForTimeout(2000);
-        console.log(`[${JURISDICTION}] Navigated to next page`);
-        return true;
+      if (await nextBtn.isVisible({ timeout: 2000 })) {
+        // Check if the button is not disabled
+        const isDisabled = await nextBtn.evaluate(el => {
+          return el.classList.contains('disabled') ||
+                 el.hasAttribute('disabled') ||
+                 el.getAttribute('aria-disabled') === 'true' ||
+                 el.closest('li')?.classList.contains('disabled');
+        });
+
+        if (!isDisabled) {
+          await nextBtn.scrollIntoViewIfNeeded();
+          await nextBtn.click();
+          await page.waitForLoadState('networkidle', { timeout: 20000 });
+          await page.waitForTimeout(2000);
+          console.log(`[${JURISDICTION}] Navigated to next page using selector: ${selector}`);
+          return true;
+        }
       }
     } catch {
       continue;
     }
   }
 
+  // Try finding by text content directly
+  try {
+    const allLinks = page.locator('a, button');
+    const count = await allLinks.count();
+    for (let i = 0; i < count; i++) {
+      const link = allLinks.nth(i);
+      try {
+        const text = await link.textContent({ timeout: 500 });
+        if (text && (text.trim() === 'Next' || text.trim() === '>' || text.trim() === '»' || text.trim() === 'Next Page')) {
+          const isDisabled = await link.evaluate(el => {
+            return el.classList.contains('disabled') ||
+                   el.hasAttribute('disabled') ||
+                   el.closest('li')?.classList.contains('disabled');
+          });
+          if (!isDisabled && await link.isVisible()) {
+            await link.click();
+            await page.waitForLoadState('networkidle', { timeout: 20000 });
+            await page.waitForTimeout(2000);
+            console.log(`[${JURISDICTION}] Navigated to next page via text search`);
+            return true;
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+  } catch {
+    // Continue
+  }
+
+  console.log(`[${JURISDICTION}] No next page button found or all pages processed`);
   return false;
 }
 
