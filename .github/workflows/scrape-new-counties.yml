@@ -6,6 +6,15 @@ on:
     # Run every 3 days at 8 AM UTC (3 AM EST) - offset from main scraper
     - cron: '0 8 1,4,7,10,13,16,19,22,25,28 * *'
   workflow_dispatch:
+    inputs:
+      start_date:
+        description: 'Start date (YYYY-MM-DD format, e.g., 2025-01-01)'
+        required: false
+        type: string
+      end_date:
+        description: 'End date (YYYY-MM-DD format, e.g., 2025-01-31)'
+        required: false
+        type: string
 
 jobs:
   scrape-carroll-county:
@@ -34,4 +43,11 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: npx tsx src/index-new-counties.ts
+        run: |
+          if [ -n "${{ inputs.start_date }}" ] && [ -n "${{ inputs.end_date }}" ]; then
+            echo "Running with custom date range: ${{ inputs.start_date }} to ${{ inputs.end_date }}"
+            npx tsx src/index-new-counties.ts --start-date=${{ inputs.start_date }} --end-date=${{ inputs.end_date }}
+          else
+            echo "Running with default date range (last 30 days)"
+            npx tsx src/index-new-counties.ts
+          fi

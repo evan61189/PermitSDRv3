@@ -2,9 +2,13 @@ import { Page } from 'playwright';
 import { getPage } from '../utils/browser.js';
 import { extractAndScorePermit, AIExtractedPermit } from '../utils/ai-scorer.js';
 import type { Permit, ScraperResult, Jurisdiction } from '../types/index.js';
+import type { DateRange } from './index.js';
 
 const JURISDICTION: Jurisdiction = 'carroll_county_md';
 const BASE_URL = 'https://amprod.carrollcountymd.gov/CitizenAccess/Cap/CapHome.aspx?module=Permits&TabName=Permits&TabList=HOME%7C0%7CPermits%7C1%7CPlanning%7C2%7CLICENSES%7C3%7CCurrentTabIndex%7C1';
+
+// Default date range is last 30 days (commercial permits don't come in as frequently)
+const DEFAULT_DATE_RANGE_DAYS = 30;
 
 // Permit types to search for CR- prefixed records
 const PERMIT_TYPES_TO_SEARCH = [
@@ -20,10 +24,23 @@ interface PermitData {
   aiData?: AIExtractedPermit;
 }
 
-export async function scrapeCarrollCounty(): Promise<ScraperResult> {
+export async function scrapeCarrollCounty(dateRange?: DateRange): Promise<ScraperResult> {
   console.log(`[${JURISDICTION}] Starting scrape...`);
   const permits: Omit<Permit, 'id' | 'created_at' | 'updated_at'>[] = [];
   const seenPermitNumbers = new Set<string>();
+
+  // Calculate date range
+  let startDate: Date;
+  let endDate: Date;
+  if (dateRange) {
+    startDate = dateRange.startDate;
+    endDate = dateRange.endDate;
+  } else {
+    endDate = new Date();
+    startDate = new Date();
+    startDate.setDate(startDate.getDate() - DEFAULT_DATE_RANGE_DAYS);
+  }
+  console.log(`[${JURISDICTION}] Date range: ${formatDate(startDate)} to ${formatDate(endDate)}`);
 
   try {
     const { page: browserPage, context } = await getPage();
@@ -50,6 +67,9 @@ export async function scrapeCarrollCounty(): Promise<ScraperResult> {
           console.log(`[${JURISDICTION}] Permit type "${permitType}" not found in dropdown, skipping...`);
           continue;
         }
+
+        // Enter date range
+        await enterDateRange(page, startDate, endDate);
 
         // Click the search button
         await clickSearchButton(page);
@@ -534,6 +554,107 @@ function transformPermit(raw: PermitData, permitType: string): Omit<Permit, 'id'
       ai_actions: ai.recommendedActions,
     } as Record<string, unknown>,
   };
+}
+
+async function enterDateRange(page: Page, startDate: Date, endDate: Date): Promise<void> {
+  const startDateStr = formatDate(startDate);
+  const endDateStr = formatDate(endDate);
+  console.log(`[${JURISDICTION}] Entering date range: ${startDateStr} to ${endDateStr}`);
+
+  // Scroll to see date fields
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
+  await page.waitForTimeout(1000);
+
+  // Find date inputs - look for inputs with date-related IDs (Accela standard patterns)
+  const startInputSelectors = [
+    'input[id*="Start" i][id*="Date" i]',
+    'input[id*="From" i][id*="Date" i]',
+    'input[id*="Begin" i]',
+    'input[id*="txtGSStartDate"]',
+    'input[id*="StartDate"]',
+  ];
+
+  const endInputSelectors = [
+    'input[id*="End" i][id*="Date" i]',
+    'input[id*="To" i][id*="Date" i]',
+    'input[id*="txtGSEndDate"]',
+    'input[id*="EndDate"]',
+  ];
+
+  // Try to find and fill start date
+  let startFilled = false;
+  for (const selector of startInputSelectors) {
+    try {
+      const startInput = page.locator(selector).first();
+      if (await startInput.isVisible({ timeout: 2000 })) {
+        await startInput.scrollIntoViewIfNeeded();
+        await startInput.click();
+        await startInput.clear();
+        await startInput.fill(startDateStr);
+        console.log(`[${JURISDICTION}] Set start date: ${startDateStr} (using ${selector})`);
+        startFilled = true;
+        break;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  if (!startFilled) {
+    console.log(`[${JURISDICTION}] Could not find start date input, trying generic date fields...`);
+    // Try to find any visible date input
+    const dateInputs = page.locator('input[type="text"]').filter({ hasText: '' });
+    const count = await dateInputs.count();
+    for (let i = 0; i < Math.min(count, 10); i++) {
+      const input = dateInputs.nth(i);
+      try {
+        const id = await input.getAttribute('id') || '';
+        const placeholder = await input.getAttribute('placeholder') || '';
+        if (id.toLowerCase().includes('date') || placeholder.toLowerCase().includes('date') || placeholder.includes('MM/DD/YYYY')) {
+          await input.click();
+          await input.clear();
+          await input.fill(startDateStr);
+          console.log(`[${JURISDICTION}] Set start date via generic input: ${startDateStr}`);
+          startFilled = true;
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  // Try to find and fill end date
+  let endFilled = false;
+  for (const selector of endInputSelectors) {
+    try {
+      const endInput = page.locator(selector).first();
+      if (await endInput.isVisible({ timeout: 2000 })) {
+        await endInput.scrollIntoViewIfNeeded();
+        await endInput.click();
+        await endInput.clear();
+        await endInput.fill(endDateStr);
+        console.log(`[${JURISDICTION}] Set end date: ${endDateStr} (using ${selector})`);
+        endFilled = true;
+        break;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  if (!endFilled) {
+    console.log(`[${JURISDICTION}] Could not find end date input`);
+  }
+
+  await page.waitForTimeout(500);
+}
+
+function formatDate(date: Date): string {
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  const year = date.getFullYear();
+  return `${month}/${day}/${year}`;
 }
 
 function parseAddress(address: string): { street: string; city?: string; zip?: string } {

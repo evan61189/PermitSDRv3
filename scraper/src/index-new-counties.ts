@@ -3,17 +3,44 @@
  * Separate from existing scrapers to avoid disruption
  *
  * Supports: Carroll County (CR- permits)
+ *
+ * Usage:
+ *   npx tsx src/index-new-counties.ts
+ *   npx tsx src/index-new-counties.ts --start-date=2025-01-01 --end-date=2025-01-31
  */
 
 import 'dotenv/config';
 import { scrapeCarrollCounty } from './scrapers/carroll-county.js';
 import { upsertPermits } from './utils/supabase.js';
+import type { DateRange } from './scrapers/index.js';
 
 async function main() {
   console.log('========================================');
   console.log('Permit SDR v3 - Carroll County Scraper');
   console.log('========================================');
   console.log(`Started at: ${new Date().toISOString()}`);
+  console.log('');
+
+  // Parse command line arguments for date range
+  const args = process.argv.slice(2);
+  let dateRange: DateRange | undefined;
+
+  const startDateArg = args.find(arg => arg.startsWith('--start-date='));
+  const endDateArg = args.find(arg => arg.startsWith('--end-date='));
+
+  if (startDateArg && endDateArg) {
+    const startDateStr = startDateArg.split('=')[1];
+    const endDateStr = endDateArg.split('=')[1];
+    dateRange = {
+      startDate: new Date(startDateStr),
+      endDate: new Date(endDateStr),
+    };
+    console.log(`Using custom date range: ${startDateStr} to ${endDateStr}`);
+  } else if (startDateArg || endDateArg) {
+    console.log('Warning: Both --start-date and --end-date must be provided. Using default date range.');
+  } else {
+    console.log('Using default date range (last 30 days)');
+  }
   console.log('');
 
   const results = [];
@@ -26,7 +53,7 @@ async function main() {
   console.log('========================================');
 
   try {
-    const result = await scrapeCarrollCounty();
+    const result = await scrapeCarrollCounty(dateRange);
     results.push(result);
 
     if (result.success && result.permits.length > 0) {
