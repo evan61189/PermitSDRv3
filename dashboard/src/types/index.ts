@@ -19,6 +19,8 @@ export type ProjectType =
 
 export type OpportunityRating = 'hot' | 'warm' | 'cold' | 'not_relevant';
 
+export type TaskPriority = 'low' | 'medium' | 'high';
+
 export type PipelineStage =
   | 'lead'
   | 'researching'
@@ -81,6 +83,28 @@ export interface DashboardStats {
   unscored: number;
 }
 
+export interface Task {
+  id: string;
+  permit_id: string;
+  title: string;
+  description?: string;
+  due_date?: string;
+  priority: TaskPriority;
+  completed: boolean;
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskWithPermit extends Task {
+  permit_number: string;
+  address: string;
+  city: string;
+  project_type: ProjectType;
+  pipeline_stage?: PipelineStage;
+  applicant_name?: string;
+}
+
 export const JURISDICTION_NAMES: Record<Jurisdiction, string> = {
   howard_county_md: 'Howard County, MD',
   baltimore_city_md: 'Baltimore City, MD',
@@ -120,4 +144,13 @@ export const PIPELINE_STAGE_CONFIG: Record<
   not_interested: { label: 'Not Interested', color: '#6b7280', bgColor: 'bg-gray-50', textColor: 'text-gray-700', order: 5 },
   won: { label: 'Won', color: '#22c55e', bgColor: 'bg-green-50', textColor: 'text-green-700', order: 6 },
   lost: { label: 'Lost', color: '#ef4444', bgColor: 'bg-red-50', textColor: 'text-red-700', order: 7 },
+};
+
+export const TASK_PRIORITY_CONFIG: Record<
+  TaskPriority,
+  { label: string; bgColor: string; textColor: string; borderColor: string }
+> = {
+  low: { label: 'Low', bgColor: 'bg-gray-50', textColor: 'text-gray-600', borderColor: 'border-gray-200' },
+  medium: { label: 'Medium', bgColor: 'bg-blue-50', textColor: 'text-blue-700', borderColor: 'border-blue-200' },
+  high: { label: 'High', bgColor: 'bg-red-50', textColor: 'text-red-700', borderColor: 'border-red-200' },
 };

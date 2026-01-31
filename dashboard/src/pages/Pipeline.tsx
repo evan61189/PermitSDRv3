@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Calendar, ChevronDown, GripVertical, Building2, MapPin, User, X, Check } from 'lucide-react';
+import { Calendar, ChevronDown, GripVertical, Building2, MapPin, User, X, Check, ClipboardList, AlertCircle } from 'lucide-react';
 import {
   DndContext,
   DragOverlay,
@@ -13,9 +13,45 @@ import {
 } from '@dnd-kit/core';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
+import { useQuery } from '@tanstack/react-query';
 import { usePermitsByPipelineStage, useUpdatePipelineStage, useUpdateProjectContact } from '../hooks/usePermits';
+import { supabase } from '../lib/supabase';
 import { PIPELINE_STAGE_CONFIG, OPPORTUNITY_COLORS, type PipelineStage, type PermitWithScore } from '../types';
 import { Link } from 'react-router-dom';
+
+// Hook to get task counts for all permits in pipeline
+function usePermitTaskCounts(permitIds: string[]) {
+  return useQuery({
+    queryKey: ['tasks', 'counts', permitIds],
+    queryFn: async () => {
+      if (permitIds.length === 0) return {};
+
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('permit_id, completed, due_date')
+        .in('permit_id', permitIds)
+        .eq('completed', false);
+
+      if (error) throw error;
+
+      const counts: Record<string, { total: number; overdue: number }> = {};
+      const now = new Date();
+
+      for (const task of data || []) {
+        if (!counts[task.permit_id]) {
+          counts[task.permit_id] = { total: 0, overdue: 0 };
+        }
+        counts[task.permit_id].total++;
+        if (task.due_date && new Date(task.due_date) < now) {
+          counts[task.permit_id].overdue++;
+        }
+      }
+
+      return counts;
+    },
+    enabled: permitIds.length > 0,
+  });
+}
 
 // Get default date range (last 30 days)
 function getDefaultDateRange() {
@@ -31,10 +67,11 @@ function getDefaultDateRange() {
 interface PipelineColumnProps {
   stage: PipelineStage;
   permits: PermitWithScore[];
+  taskCounts: Record<string, { total: number; overdue: number }>;
   onUpdateContact: (permitId: string, contact: string) => void;
 }
 
-function PipelineColumn({ stage, permits, onUpdateContact }: PipelineColumnProps) {
+function PipelineColumn({ stage, permits, taskCounts, onUpdateContact }: PipelineColumnProps) {
   const config = PIPELINE_STAGE_CONFIG[stage];
   const { setNodeRef, isOver } = useDroppable({
     id: stage,
@@ -69,6 +106,7 @@ function PipelineColumn({ stage, permits, onUpdateContact }: PipelineColumnProps
           <DraggablePipelineCard
             key={permit.id}
             permit={permit}
+            taskCount={taskCounts[permit.id]}
             onUpdateContact={onUpdateContact}
           />
         ))}
@@ -84,10 +122,11 @@ function PipelineColumn({ stage, permits, onUpdateContact }: PipelineColumnProps
 
 interface DraggablePipelineCardProps {
   permit: PermitWithScore;
+  taskCount?: { total: number; overdue: number };
   onUpdateContact: (permitId: string, contact: string) => void;
 }
 
-function DraggablePipelineCard({ permit, onUpdateContact }: DraggablePipelineCardProps) {
+function DraggablePipelineCard({ permit, taskCount, onUpdateContact }: DraggablePipelineCardProps) {
   const {
     attributes,
     listeners,
@@ -113,6 +152,7 @@ function DraggablePipelineCard({ permit, onUpdateContact }: DraggablePipelineCar
     >
       <PipelineCard
         permit={permit}
+        taskCount={taskCount}
         onUpdateContact={onUpdateContact}
         isDragging={isDragging}
       />
@@ -122,12 +162,13 @@ function DraggablePipelineCard({ permit, onUpdateContact }: DraggablePipelineCar
 
 interface PipelineCardProps {
   permit: PermitWithScore;
+  taskCount?: { total: number; overdue: number };
   onUpdateContact: (permitId: string, contact: string) => void;
   isDragging?: boolean;
   isDragOverlay?: boolean;
 }
 
-function PipelineCard({ permit, onUpdateContact, isDragging, isDragOverlay }: PipelineCardProps) {
+function PipelineCard({ permit, taskCount, onUpdateContact, isDragging, isDragOverlay }: PipelineCardProps) {
   const [isEditingContact, setIsEditingContact] = useState(false);
   const [contactValue, setContactValue] = useState(permit.project_contact || '');
 
@@ -227,6 +268,23 @@ function PipelineCard({ permit, onUpdateContact, isDragging, isDragOverlay }: Pi
             )}
           </div>
 
+          {/* Task Indicator */}
+          {taskCount && taskCount.total > 0 && (
+            <div className="mt-1 flex items-center gap-1 text-[11px]">
+              {taskCount.overdue > 0 ? (
+                <span className="flex items-center gap-0.5 text-red-600">
+                  <AlertCircle className="w-2.5 h-2.5" />
+                  {taskCount.overdue} overdue
+                </span>
+              ) : (
+                <span className="flex items-center gap-0.5 text-gray-500">
+                  <ClipboardList className="w-2.5 h-2.5" />
+                  {taskCount.total} task{taskCount.total > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Score bar */}
           {permit.overall_score !== null && (
             <div className="mt-1 flex items-center gap-1">
@@ -301,6 +359,15 @@ export default function Pipeline() {
 
   // Pipeline stages
   const pipelineStages: PipelineStage[] = ['lead', 'researching', 'contact_made', 'meeting_booked', 'not_interested'];
+
+  // Get all permit IDs for task counts
+  const allPermitIds = useMemo(() => {
+    if (!permitsByStage) return [];
+    return pipelineStages.flatMap((stage) => permitsByStage[stage]?.map((p) => p.id) || []);
+  }, [permitsByStage]);
+
+  // Fetch task counts for all permits
+  const { data: taskCounts = {} } = usePermitTaskCounts(allPermitIds);
 
   // Calculate total count
   const totalCount = useMemo(() => {
@@ -425,6 +492,7 @@ export default function Pipeline() {
                 key={stage}
                 stage={stage}
                 permits={permitsByStage?.[stage] || []}
+                taskCounts={taskCounts}
                 onUpdateContact={handleUpdateContact}
               />
             ))}
