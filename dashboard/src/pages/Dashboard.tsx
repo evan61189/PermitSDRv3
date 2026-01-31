@@ -1,4 +1,4 @@
-import { FileText, Flame, ThermometerSun, Snowflake, MapPin } from 'lucide-react';
+import { FileText, Flame, ThermometerSun, Snowflake, MapPin, Users, Building2, DollarSign, TrendingUp } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -12,26 +12,41 @@ import {
   Cell,
 } from 'recharts';
 import StatCard from '../components/StatCard';
-import PermitCard from '../components/PermitCard';
 import OpportunityMap from '../components/OpportunityMap';
 import {
   useDashboardStats,
   usePermitsByType,
   usePermitsByJurisdiction,
-  useHotOpportunities,
   usePermitsForMap,
+  useTopApplicants,
+  useTopApplicantsByCounty,
+  useTopContractors,
+  useValueInsights,
 } from '../hooks/usePermits';
 import { PROJECT_TYPE_NAMES, JURISDICTION_NAMES, type ProjectType, type Jurisdiction } from '../types';
 
 // Clipper Construction brand colors for charts
 const COLORS = ['#F9A825', '#2D3436', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
+// Helper to format currency
+const formatCurrency = (value: number) => {
+  if (value >= 1000000) {
+    return `$${(value / 1000000).toFixed(1)}M`;
+  } else if (value >= 1000) {
+    return `$${(value / 1000).toFixed(0)}K`;
+  }
+  return `$${value.toFixed(0)}`;
+};
+
 export default function Dashboard() {
   const { data: stats } = useDashboardStats();
   const { data: byType } = usePermitsByType();
   const { data: byJurisdiction } = usePermitsByJurisdiction();
-  const { data: hotOpportunities, isLoading: hotLoading } = useHotOpportunities(5);
   const { data: mapPermits, isLoading: mapLoading } = usePermitsForMap(100);
+  const { data: topApplicants, isLoading: applicantsLoading } = useTopApplicants(5);
+  const { data: applicantsByCounty, isLoading: countyLoading } = useTopApplicantsByCounty(3);
+  const { data: topContractors, isLoading: contractorsLoading } = useTopContractors(5);
+  const { data: valueInsights, isLoading: valueLoading } = useValueInsights();
 
   const typeChartData = byType?.map((item) => ({
     name: PROJECT_TYPE_NAMES[item.type as ProjectType] || item.type,
@@ -151,31 +166,159 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Hot Opportunities */}
-      <div className="card p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-clipper-navy flex items-center gap-2">
-            <Flame className="w-5 h-5 text-red-500" />
-            Top Hot Opportunities
-          </h2>
-          <a href="/permits?rating=hot" className="text-sm text-clipper-gold hover:text-clipper-gold-dark font-medium">
-            View all →
-          </a>
+      {/* Insights Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Value Summary */}
+        <div className="card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-clipper-navy flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-green-500" />
+              Value Summary
+            </h2>
+          </div>
+          {valueLoading ? (
+            <div className="text-center py-8 text-gray-500">Loading...</div>
+          ) : valueInsights ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-green-50 rounded-lg p-4">
+                  <div className="text-sm text-green-600 font-medium">Total Est. Value</div>
+                  <div className="text-2xl font-bold text-green-700">
+                    {formatCurrency(valueInsights.totalEstimatedValue)}
+                  </div>
+                </div>
+                <div className="bg-blue-50 rounded-lg p-4">
+                  <div className="text-sm text-blue-600 font-medium">Average Value</div>
+                  <div className="text-2xl font-bold text-blue-700">
+                    {formatCurrency(valueInsights.averageValue)}
+                  </div>
+                </div>
+              </div>
+              <div className="bg-amber-50 rounded-lg p-4">
+                <div className="text-sm text-amber-600 font-medium">Highest Value Project</div>
+                <div className="text-2xl font-bold text-amber-700">
+                  {formatCurrency(valueInsights.highestValue)}
+                </div>
+              </div>
+              {valueInsights.valueByProjectType.length > 0 && (
+                <div className="mt-4">
+                  <div className="text-sm font-medium text-gray-600 mb-2">Top Value by Project Type</div>
+                  <div className="space-y-2">
+                    {valueInsights.valueByProjectType.slice(0, 3).map((item) => (
+                      <div key={item.type} className="flex items-center justify-between text-sm">
+                        <span className="text-gray-700">
+                          {PROJECT_TYPE_NAMES[item.type as ProjectType] || item.type}
+                        </span>
+                        <span className="font-medium text-gray-900">
+                          {formatCurrency(item.value)} ({item.count})
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">No value data available</div>
+          )}
         </div>
 
-        {hotLoading ? (
-          <div className="text-center py-8 text-gray-500">Loading...</div>
-        ) : hotOpportunities && hotOpportunities.length > 0 ? (
-          <div className="space-y-4">
-            {hotOpportunities.map((permit) => (
-              <PermitCard key={permit.id} permit={permit} />
-            ))}
+        {/* Top Applicants */}
+        <div className="card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-clipper-navy flex items-center gap-2">
+              <Users className="w-5 h-5 text-purple-500" />
+              Top Applicants
+            </h2>
           </div>
-        ) : (
-          <div className="text-center py-8 text-gray-500">
-            No hot opportunities found. Run the scraper to collect permit data.
+          {applicantsLoading ? (
+            <div className="text-center py-8 text-gray-500">Loading...</div>
+          ) : topApplicants && topApplicants.length > 0 ? (
+            <div className="space-y-3">
+              {topApplicants.map((applicant, index) => (
+                <div key={applicant.name} className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-bold text-sm">
+                    {index + 1}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-gray-900 truncate">{applicant.name}</div>
+                    <div className="text-sm text-gray-500">
+                      {applicant.count} permits · {formatCurrency(applicant.totalValue)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">No applicant data available</div>
+          )}
+        </div>
+
+        {/* Top Contractors */}
+        <div className="card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-clipper-navy flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-orange-500" />
+              Top Contractors
+            </h2>
           </div>
-        )}
+          {contractorsLoading ? (
+            <div className="text-center py-8 text-gray-500">Loading...</div>
+          ) : topContractors && topContractors.length > 0 ? (
+            <div className="space-y-3">
+              {topContractors.map((contractor, index) => (
+                <div key={contractor.name} className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 font-bold text-sm">
+                    {index + 1}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-gray-900 truncate">{contractor.name}</div>
+                    <div className="text-sm text-gray-500">
+                      {contractor.count} permits · {formatCurrency(contractor.totalValue)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">No contractor data available</div>
+          )}
+        </div>
+
+        {/* Top Applicants by County */}
+        <div className="card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-clipper-navy flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-indigo-500" />
+              Top Applicants by County
+            </h2>
+          </div>
+          {countyLoading ? (
+            <div className="text-center py-8 text-gray-500">Loading...</div>
+          ) : applicantsByCounty && applicantsByCounty.length > 0 ? (
+            <div className="space-y-4">
+              {applicantsByCounty.map((county) => (
+                <div key={county.county}>
+                  <div className="font-medium text-gray-900 mb-2">
+                    {JURISDICTION_NAMES[county.county as Jurisdiction] || county.county}
+                  </div>
+                  <div className="space-y-1 pl-3 border-l-2 border-indigo-200">
+                    {county.applicants.map((applicant, idx) => (
+                      <div key={applicant.name} className="flex items-center justify-between text-sm">
+                        <span className="text-gray-600 truncate flex-1">
+                          {idx + 1}. {applicant.name}
+                        </span>
+                        <span className="text-gray-500 ml-2">{applicant.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">No county data available</div>
+          )}
+        </div>
       </div>
     </div>
   );

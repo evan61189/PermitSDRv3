@@ -336,3 +336,193 @@ export function usePermitsByPipelineStage(dateFrom?: string, dateTo?: string) {
     },
   });
 }
+
+// ==================== INSIGHTS HOOKS ====================
+
+export interface ApplicantInsight {
+  name: string;
+  count: number;
+  totalValue: number;
+}
+
+export interface ApplicantByCountyInsight {
+  county: string;
+  applicants: ApplicantInsight[];
+}
+
+export interface ContractorInsight {
+  name: string;
+  count: number;
+  totalValue: number;
+}
+
+export interface ValueInsights {
+  totalEstimatedValue: number;
+  averageValue: number;
+  highestValue: number;
+  permitCount: number;
+  valueByProjectType: { type: string; value: number; count: number }[];
+}
+
+export function useTopApplicants(limit = 5) {
+  return useQuery({
+    queryKey: ['top-applicants', limit],
+    queryFn: async (): Promise<ApplicantInsight[]> => {
+      const { data, error } = await supabase
+        .from('permits')
+        .select('applicant_name, estimated_value');
+
+      if (error) throw error;
+
+      // Aggregate by applicant name
+      const applicantMap = new Map<string, { count: number; totalValue: number }>();
+
+      for (const permit of data || []) {
+        const name = permit.applicant_name?.trim();
+        if (!name) continue;
+
+        const existing = applicantMap.get(name) || { count: 0, totalValue: 0 };
+        existing.count += 1;
+        existing.totalValue += permit.estimated_value || 0;
+        applicantMap.set(name, existing);
+      }
+
+      // Convert to array and sort by count
+      const applicants: ApplicantInsight[] = Array.from(applicantMap.entries())
+        .map(([name, stats]) => ({ name, ...stats }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, limit);
+
+      return applicants;
+    },
+  });
+}
+
+export function useTopApplicantsByCounty(limitPerCounty = 3) {
+  return useQuery({
+    queryKey: ['top-applicants-by-county', limitPerCounty],
+    queryFn: async (): Promise<ApplicantByCountyInsight[]> => {
+      const { data, error } = await supabase
+        .from('permits')
+        .select('applicant_name, county, estimated_value, source_jurisdiction');
+
+      if (error) throw error;
+
+      // Group by county/jurisdiction first, then aggregate applicants
+      const countyMap = new Map<string, Map<string, { count: number; totalValue: number }>>();
+
+      for (const permit of data || []) {
+        const county = permit.county || permit.source_jurisdiction || 'Unknown';
+        const name = permit.applicant_name?.trim();
+        if (!name) continue;
+
+        if (!countyMap.has(county)) {
+          countyMap.set(county, new Map());
+        }
+
+        const applicantMap = countyMap.get(county)!;
+        const existing = applicantMap.get(name) || { count: 0, totalValue: 0 };
+        existing.count += 1;
+        existing.totalValue += permit.estimated_value || 0;
+        applicantMap.set(name, existing);
+      }
+
+      // Convert to final structure
+      const result: ApplicantByCountyInsight[] = [];
+
+      for (const [county, applicantMap] of countyMap.entries()) {
+        const applicants: ApplicantInsight[] = Array.from(applicantMap.entries())
+          .map(([name, stats]) => ({ name, ...stats }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, limitPerCounty);
+
+        result.push({ county, applicants });
+      }
+
+      // Sort counties by total permit count
+      result.sort((a, b) => {
+        const aTotal = a.applicants.reduce((sum, app) => sum + app.count, 0);
+        const bTotal = b.applicants.reduce((sum, app) => sum + app.count, 0);
+        return bTotal - aTotal;
+      });
+
+      return result;
+    },
+  });
+}
+
+export function useTopContractors(limit = 5) {
+  return useQuery({
+    queryKey: ['top-contractors', limit],
+    queryFn: async (): Promise<ContractorInsight[]> => {
+      const { data, error } = await supabase
+        .from('permits')
+        .select('contractor_name, estimated_value');
+
+      if (error) throw error;
+
+      // Aggregate by contractor name
+      const contractorMap = new Map<string, { count: number; totalValue: number }>();
+
+      for (const permit of data || []) {
+        const name = permit.contractor_name?.trim();
+        if (!name) continue;
+
+        const existing = contractorMap.get(name) || { count: 0, totalValue: 0 };
+        existing.count += 1;
+        existing.totalValue += permit.estimated_value || 0;
+        contractorMap.set(name, existing);
+      }
+
+      // Convert to array and sort by count
+      const contractors: ContractorInsight[] = Array.from(contractorMap.entries())
+        .map(([name, stats]) => ({ name, ...stats }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, limit);
+
+      return contractors;
+    },
+  });
+}
+
+export function useValueInsights() {
+  return useQuery({
+    queryKey: ['value-insights'],
+    queryFn: async (): Promise<ValueInsights> => {
+      const { data, error } = await supabase
+        .from('permits')
+        .select('estimated_value, project_type');
+
+      if (error) throw error;
+
+      const permits = data || [];
+      const permitsWithValue = permits.filter(p => p.estimated_value && p.estimated_value > 0);
+
+      const totalEstimatedValue = permitsWithValue.reduce((sum, p) => sum + (p.estimated_value || 0), 0);
+      const averageValue = permitsWithValue.length > 0 ? totalEstimatedValue / permitsWithValue.length : 0;
+      const highestValue = permitsWithValue.reduce((max, p) => Math.max(max, p.estimated_value || 0), 0);
+
+      // Value by project type
+      const typeMap = new Map<string, { value: number; count: number }>();
+      for (const permit of permitsWithValue) {
+        const type = permit.project_type || 'other';
+        const existing = typeMap.get(type) || { value: 0, count: 0 };
+        existing.value += permit.estimated_value || 0;
+        existing.count += 1;
+        typeMap.set(type, existing);
+      }
+
+      const valueByProjectType = Array.from(typeMap.entries())
+        .map(([type, stats]) => ({ type, ...stats }))
+        .sort((a, b) => b.value - a.value);
+
+      return {
+        totalEstimatedValue,
+        averageValue,
+        highestValue,
+        permitCount: permits.length,
+        valueByProjectType,
+      };
+    },
+  });
+}
