@@ -10,12 +10,11 @@ const BASE_URL = 'https://amprod.carrollcountymd.gov/CitizenAccess/Cap/CapHome.a
 // Default date range is last 30 days (commercial permits don't come in as frequently)
 const DEFAULT_DATE_RANGE_DAYS = 30;
 
-// Permit types to search for CR- prefixed records
-const PERMIT_TYPES_TO_SEARCH = [
-  'Commercial Renovations',
-  'Commercial - new',
+// Permit types to search and their corresponding record prefixes
+const PERMIT_TYPE_CONFIG: Array<{ permitType: string; recordPrefix: string }> = [
+  { permitType: 'Commercial Renovations', recordPrefix: 'CR-' },
+  { permitType: 'Commercial - new', recordPrefix: 'CN-' },
 ];
-const RECORD_PREFIX = 'CR-';
 
 interface PermitData {
   recordNumber: string;
@@ -46,10 +45,10 @@ export async function scrapeCarrollCounty(dateRange?: DateRange): Promise<Scrape
     const { page: browserPage, context } = await getPage();
     const page = browserPage;
 
-    // Loop through each permit type
-    for (const permitType of PERMIT_TYPES_TO_SEARCH) {
+    // Loop through each permit type config
+    for (const { permitType, recordPrefix } of PERMIT_TYPE_CONFIG) {
       console.log(`[${JURISDICTION}] ========================================`);
-      console.log(`[${JURISDICTION}] Searching for: ${permitType}`);
+      console.log(`[${JURISDICTION}] Searching for: ${permitType} (${recordPrefix} records)`);
       console.log(`[${JURISDICTION}] ========================================`);
 
       try {
@@ -74,9 +73,9 @@ export async function scrapeCarrollCounty(dateRange?: DateRange): Promise<Scrape
         // Click the search button
         await clickSearchButton(page);
 
-        // Process results, looking for CR- prefixed records
-        const rawPermits = await processPermitResults(page, seenPermitNumbers);
-        console.log(`[${JURISDICTION}] Found ${rawPermits.length} CR- permits for "${permitType}"`);
+        // Process results, looking for the appropriate prefixed records
+        const rawPermits = await processPermitResults(page, seenPermitNumbers, recordPrefix);
+        console.log(`[${JURISDICTION}] Found ${rawPermits.length} ${recordPrefix} permits for "${permitType}"`);
 
         // Transform and add permits
         for (const raw of rawPermits) {
@@ -302,7 +301,7 @@ async function clickSearchButton(page: Page): Promise<void> {
   await page.waitForTimeout(3000);
 }
 
-async function processPermitResults(page: Page, seenPermitNumbers: Set<string>): Promise<PermitData[]> {
+async function processPermitResults(page: Page, seenPermitNumbers: Set<string>, recordPrefix: string): Promise<PermitData[]> {
   const permits: PermitData[] = [];
   let currentPage = 1;
 
@@ -327,20 +326,20 @@ async function processPermitResults(page: Page, seenPermitNumbers: Set<string>):
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForTimeout(1000);
 
-    // Get all permit links, filtering for CR- prefix
+    // Get all permit links, filtering for the specified prefix
     const permitLinks = await page.$$eval('table tbody tr a, .ACA_Grid tr a, [id*="GridView"] a', (links, prefix) =>
       links
         .filter(a => {
           const text = a.textContent?.trim() || '';
-          // Only include links that start with CR-
+          // Only include links that start with the specified prefix
           return text.startsWith(prefix);
         })
         .map(a => a.textContent!.trim()),
-      RECORD_PREFIX
+      recordPrefix
     );
 
     const uniquePermitLinks = [...new Set(permitLinks)];
-    console.log(`[${JURISDICTION}] Found ${uniquePermitLinks.length} ${RECORD_PREFIX} permit links on page ${currentPage}`);
+    console.log(`[${JURISDICTION}] Found ${uniquePermitLinks.length} ${recordPrefix} permit links on page ${currentPage}`);
 
     for (let i = 0; i < uniquePermitLinks.length; i++) {
       const permitNumber = uniquePermitLinks[i];
