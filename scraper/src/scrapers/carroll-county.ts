@@ -13,7 +13,7 @@ const DEFAULT_DATE_RANGE_DAYS = 30;
 // Permit types to search for CR- prefixed records
 const PERMIT_TYPES_TO_SEARCH = [
   'Commercial Renovations',
-  'Commercial -New',
+  'Commercial - new',
 ];
 const RECORD_PREFIX = 'CR-';
 
