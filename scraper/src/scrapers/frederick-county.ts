@@ -381,7 +381,7 @@ async function processPermitResults(page: Page, seenPermitNumbers: Set<string>):
 
   // Wait for results to load
   try {
-    await page.waitForSelector('text=/view details/i', { timeout: 15000 });
+    await page.waitForSelector('a:has-text("View Details"), button:has-text("View Details")', { timeout: 15000 });
   } catch {
     console.log(`[${JURISDICTION}] No "View Details" links found - possibly no results`);
     return permits;
@@ -393,7 +393,7 @@ async function processPermitResults(page: Page, seenPermitNumbers: Set<string>):
 
   while (processedCount < maxPermits) {
     // Find all "View Details" links/buttons
-    const viewDetailsLinks = page.locator('text=/view details/i, a:has-text("View Details"), button:has-text("View Details")');
+    const viewDetailsLinks = page.locator('a:has-text("View Details"), button:has-text("View Details")');
     const count = await viewDetailsLinks.count();
 
     if (count === 0) {
@@ -410,7 +410,7 @@ async function processPermitResults(page: Page, seenPermitNumbers: Set<string>):
         await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
         await page.waitForTimeout(1000);
 
-        const links = page.locator('text=/view details/i, a:has-text("View Details"), button:has-text("View Details")');
+        const links = page.locator('a:has-text("View Details"), button:has-text("View Details")');
         const link = links.nth(i);
 
         if (!await link.isVisible({ timeout: 3000 })) {
