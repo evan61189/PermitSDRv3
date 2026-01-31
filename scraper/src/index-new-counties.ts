@@ -1,32 +1,53 @@
 /**
- * Carroll County Scraper Entry Point
- * Separate from existing scrapers to avoid disruption
+ * New Counties Scraper Entry Point
+ * Separate from existing Accela-based scrapers
  *
- * Supports: Carroll County (CR- permits)
+ * Supports:
+ *   - Carroll County (Accela - CR-/CN- permits)
+ *   - Frederick County (CIVICS - Non Residential Building Permits)
  *
  * Usage:
  *   npx tsx src/index-new-counties.ts
  *   npx tsx src/index-new-counties.ts --start-date=2025-01-01 --end-date=2025-01-31
+ *   npx tsx src/index-new-counties.ts --jurisdiction=carroll_county_md
+ *   npx tsx src/index-new-counties.ts --jurisdiction=frederick_county_md
  */
 
 import 'dotenv/config';
 import { scrapeCarrollCounty } from './scrapers/carroll-county.js';
+import { scrapeFrederickcounty } from './scrapers/frederick-county.js';
 import { upsertPermits, saveExtractedScores } from './utils/supabase.js';
 import type { DateRange } from './scrapers/index.js';
+import type { ScraperResult } from './types/index.js';
+
+type ScraperFunction = (dateRange?: DateRange) => Promise<ScraperResult>;
+
+const scrapers: Record<string, { scraper: ScraperFunction; description: string }> = {
+  carroll_county_md: {
+    scraper: scrapeCarrollCounty,
+    description: 'Carroll County - Commercial Renovations (CR-) and Commercial New (CN-)',
+  },
+  frederick_county_md: {
+    scraper: scrapeFrederickcounty,
+    description: 'Frederick County - Non Residential Building Permits',
+  },
+};
 
 async function main() {
   console.log('========================================');
-  console.log('Permit SDR v3 - Carroll County Scraper');
+  console.log('Permit SDR v3 - New Counties Scraper');
+  console.log('Carroll County & Frederick County');
   console.log('========================================');
   console.log(`Started at: ${new Date().toISOString()}`);
   console.log('');
 
-  // Parse command line arguments for date range
+  // Parse command line arguments
   const args = process.argv.slice(2);
   let dateRange: DateRange | undefined;
 
   const startDateArg = args.find(arg => arg.startsWith('--start-date='));
   const endDateArg = args.find(arg => arg.startsWith('--end-date='));
+  const jurisdictionArg = args.find(arg => arg.startsWith('--jurisdiction='));
 
   if (startDateArg && endDateArg) {
     const startDateStr = startDateArg.split('=')[1];
@@ -41,39 +62,59 @@ async function main() {
   } else {
     console.log('Using default date range (last 30 days)');
   }
+
+  // Determine which jurisdictions to scrape
+  const jurisdictionsToScrape = jurisdictionArg
+    ? [jurisdictionArg.split('=')[1]]
+    : Object.keys(scrapers);
+
+  console.log(`Jurisdictions to scrape: ${jurisdictionsToScrape.join(', ')}`);
   console.log('');
 
-  const results = [];
+  const results: ScraperResult[] = [];
 
-  // Run Carroll County scraper
-  console.log('========================================');
-  console.log('Starting Carroll County scraper...');
-  console.log('Searching for Commercial Renovations and Commercial -New permits');
-  console.log('Looking for CR- prefixed record numbers');
-  console.log('========================================');
-
-  try {
-    const result = await scrapeCarrollCounty(dateRange);
-    results.push(result);
-
-    if (result.success && result.permits.length > 0) {
-      console.log(`\nUpserting ${result.permits.length} Carroll County permits to database...`);
-      const savedPermits = await upsertPermits(result.permits);
-      console.log('Carroll County permits saved successfully!');
-
-      // Save AI scores to the ai_scores table
-      if (savedPermits.length > 0) {
-        console.log('Saving AI scores to database...');
-        const scoresCount = await saveExtractedScores(savedPermits);
-        console.log(`Saved ${scoresCount} AI scores`);
-      }
-    } else if (result.permits.length === 0) {
-      console.log('No Carroll County CR- permits found.');
+  for (const jurisdiction of jurisdictionsToScrape) {
+    const scraperConfig = scrapers[jurisdiction];
+    if (!scraperConfig) {
+      console.log(`Unknown jurisdiction: ${jurisdiction}, skipping...`);
+      continue;
     }
-  } catch (error) {
-    console.error('Carroll County scraper failed:', error);
+
+    console.log('========================================');
+    console.log(`Starting ${jurisdiction} scraper...`);
+    console.log(scraperConfig.description);
+    console.log('========================================');
+
+    try {
+      const result = await scraperConfig.scraper(dateRange);
+      results.push(result);
+
+      if (result.success && result.permits.length > 0) {
+        console.log(`\nUpserting ${result.permits.length} ${jurisdiction} permits to database...`);
+        const savedPermits = await upsertPermits(result.permits);
+        console.log(`${jurisdiction} permits saved successfully!`);
+
+        // Save AI scores to the ai_scores table
+        if (savedPermits.length > 0) {
+          console.log('Saving AI scores to database...');
+          const scoresCount = await saveExtractedScores(savedPermits);
+          console.log(`Saved ${scoresCount} AI scores`);
+        }
+      } else if (result.permits.length === 0) {
+        console.log(`No ${jurisdiction} permits found.`);
+      }
+    } catch (error) {
+      console.error(`${jurisdiction} scraper failed:`, error);
+      results.push({
+        jurisdiction: jurisdiction as any,
+        permits: [],
+        scraped_at: new Date().toISOString(),
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+    console.log('');
   }
-  console.log('');
 
   // Summary
   console.log('========================================');
