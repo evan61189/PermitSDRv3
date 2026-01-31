@@ -26,21 +26,55 @@ export interface AIExtractedPermit {
 
 const EXTRACTION_AND_SCORING_PROMPT = `You are an AI assistant that extracts permit data and scores opportunities for Clipper Construction, a commercial general contractor in the Maryland/DC area.
 
+CRITICAL: The "Description of Work" field is the MOST IMPORTANT factor in scoring. Read it carefully!
+
 Clipper Construction specializes in:
-- Commercial tenant improvements and fit-outs
-- Office renovations and buildouts
+- Commercial tenant improvements and fit-outs (full buildouts, not single trades)
+- Office renovations and buildouts (comprehensive interior work)
 - Retail construction and renovations
 - Medical/dental office buildouts
 - Restaurant and hospitality construction
-- Multi-family residential construction
+- Multi-family residential construction (large scale)
 - Ground-up commercial construction
 
-They are NOT interested in:
+They are NOT interested in (score these as "not_relevant" or "cold"):
 - Single-family residential projects
-- Single trade work (electrical only, plumbing only, HVAC only)
+- Single trade work (electrical only, plumbing only, HVAC only, mechanical only)
 - Fire alarm/sprinkler-only permits
 - Roofing-only projects
 - Minor repairs and maintenance
+- Sign permits
+- Solar panel installations
+- Generator installations
+- Kitchen hood/exhaust only
+- Fire suppression system only
+- Security system installations
+- Minor alterations (under $50K value)
+- Facade work only
+- ADA compliance work only (ramps, restroom modifications)
+- Equipment replacements (RTU, water heater, etc.)
+- Demolition-only permits (unless part of larger project)
+- Certificate of occupancy applications
+- Change of use permits without construction
+
+RED FLAGS that indicate NOT a good opportunity (lower the score significantly):
+- Description mentions only one trade (electrical, plumbing, HVAC, mechanical)
+- Very low estimated value (under $50K)
+- Description is vague with no scope details
+- Work is limited to a single room or small area
+- Permit is for equipment replacement/installation only
+- "Like for like" replacement work
+- Maintenance or repair work
+
+GOOD INDICATORS that raise the score:
+- Multi-trade work mentioned (electrical AND plumbing AND HVAC)
+- "Tenant improvement", "tenant fit-out", "buildout", "shell to suit"
+- Specific square footage mentioned (especially 1,000+ SF)
+- Higher estimated values ($100K+)
+- New construction or major renovation
+- Commercial kitchen buildout (full kitchen, not just hood)
+- Medical/dental office buildout
+- Restaurant construction (not just equipment)
 
 Below is the RAW TEXT from a permit detail page. Extract the relevant information and score the opportunity.
 
@@ -56,7 +90,7 @@ Extract and return the following as JSON:
 
 1. EXTRACTED DATA:
    - address: The work location/project address (full street address if available)
-   - description: The description of work / project description (the actual work being done)
+   - description: The FULL description of work from the permit (copy it exactly - this is critical for assessment)
    - record_type: The permit/record type
    - status: Current permit status
    - applicant_name: Applicant or owner name if shown
@@ -65,7 +99,7 @@ Extract and return the following as JSON:
    - square_footage: Square footage as a number (null if not shown)
    - project_type: Classify based on the description using these rules:
      * "commercial_new" - New commercial building construction, ground-up commercial
-     * "commercial_renovation" - Commercial alterations, tenant fit-outs, office buildouts, retail renovations, restaurant buildouts, medical/dental office work, commercial interior work
+     * "commercial_renovation" - Commercial alterations, tenant fit-outs, office buildouts, retail renovations, restaurant buildouts, medical/dental office work, commercial interior work (MUST be multi-trade or comprehensive)
      * "residential_new" - New residential construction (single or multi-family)
      * "residential_renovation" - Residential alterations, home renovations, apartment renovations
      * "industrial" - Warehouse, manufacturing, industrial facility work
@@ -75,16 +109,20 @@ Extract and return the following as JSON:
      * "hvac" - HVAC-only permits (heating, cooling, ventilation)
      * "roofing" - Roofing-only permits
      * "demolition" - Demolition permits
-     * "other" - Only if none of the above clearly apply
+     * "other" - Single-trade work, minor alterations, equipment installs, signs, etc.
 
-     IMPORTANT: Most commercial alteration permits should be "commercial_renovation". Look for keywords like: tenant, fit-out, buildout, alteration, renovation, interior, office, retail, restaurant, medical, dental, commercial.
+     IMPORTANT: Do NOT classify single-trade work as "commercial_renovation". If the description only mentions one trade (electrical, plumbing, HVAC, mechanical), classify as that specific trade type or "other".
 
-2. SCORING (0-100 scale):
+2. SCORING (0-100 scale) - BE CONSERVATIVE:
    - overall_score: How good an opportunity this is for Clipper (0-100)
+     * 75-100 (HOT): Only for comprehensive multi-trade commercial projects with clear scope
+     * 50-74 (WARM): Decent commercial projects but may be smaller or less defined
+     * 25-49 (COLD): Marginal - might be worth monitoring but probably not a fit
+     * 0-24 (NOT_RELEVANT): Single-trade, residential, minor work, or not a fit
    - opportunity_rating: "hot" (75+), "warm" (50-74), "cold" (25-49), or "not_relevant" (<25)
-   - reasoning: 2-3 sentences explaining why this is or isn't a good fit
+   - reasoning: 2-3 sentences explaining why this is or isn't a good fit. Reference the SPECIFIC description of work.
    - keywords_detected: Key terms that influenced your assessment
-   - recommended_actions: What should Clipper do? (e.g., "Contact applicant", "Monitor project", "Skip - not relevant")
+   - recommended_actions: What should Clipper do? (e.g., "Contact applicant", "Monitor project", "Skip - single trade work", "Skip - residential")
 
 Respond ONLY with valid JSON:
 {
