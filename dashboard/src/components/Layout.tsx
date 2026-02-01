@@ -1,6 +1,7 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { LayoutDashboard, FileText, Kanban, ClipboardList } from 'lucide-react';
 import clsx from 'clsx';
+import { ChatBot } from './ChatBot';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -67,6 +68,9 @@ export default function Layout() {
           <Outlet />
         </div>
       </main>
+
+      {/* AI Chat Assistant */}
+      <ChatBot />
     </div>
   );
 }
