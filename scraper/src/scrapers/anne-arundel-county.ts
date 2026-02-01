@@ -32,6 +32,9 @@ export async function scrapeAnneArundelCounty(dateRange?: DateRange): Promise<Sc
   const permits: Omit<Permit, 'id' | 'created_at' | 'updated_at'>[] = [];
   const seenPermitNumbers = new Set<string>();
 
+  // Store the dropdown ID after finding it the first time - reuse for all subsequent searches
+  let recordTypeDropdownId: string | null = null;
+
   try {
     const { page: browserPage, context } = await getPage();
     const page = browserPage;
@@ -52,10 +55,16 @@ export async function scrapeAnneArundelCounty(dateRange?: DateRange): Promise<Sc
         await handleDisclaimer(page);
 
         // Step 2: Find dropdown by label "Record Type" and select the record type
-        const foundType = await selectDropdownByLabel(page, DROPDOWN_LABEL, recordType);
-        if (!foundType) {
+        // Pass the stored dropdown ID to reuse the same dropdown
+        const result = await selectDropdownByLabel(page, DROPDOWN_LABEL, recordType, recordTypeDropdownId);
+        if (!result.success) {
           console.log(`[${JURISDICTION}] Record type "${recordType}" not found in dropdown, skipping...`);
           continue;
+        }
+        // Store the dropdown ID for subsequent searches
+        if (!recordTypeDropdownId && result.dropdownId) {
+          recordTypeDropdownId = result.dropdownId;
+          console.log(`[${JURISDICTION}] Stored dropdown ID for reuse: ${recordTypeDropdownId}`);
         }
 
         // Step 3: Enter date range (use custom range or default to last 3 days)
@@ -157,7 +166,12 @@ async function scrollToRenderPage(page: Page): Promise<void> {
   console.log(`[${JURISDICTION}] Page fully rendered, scrolled back to top`);
 }
 
-async function selectDropdownByLabel(page: Page, labelText: string, optionText: string): Promise<boolean> {
+interface DropdownResult {
+  success: boolean;
+  dropdownId: string | null;
+}
+
+async function selectDropdownByLabel(page: Page, labelText: string, optionText: string, storedDropdownId?: string | null): Promise<DropdownResult> {
   console.log(`[${JURISDICTION}] Looking for "${labelText}" dropdown to select "${optionText}"...`);
 
   // First, scroll to bottom to render all content
@@ -171,26 +185,45 @@ async function selectDropdownByLabel(page: Page, labelText: string, optionText: 
   let dropdown = null;
   let dropdownId = '';
 
-  // Method 1 (PRIORITY): Look for Accela-specific dropdown IDs - most reliable
-  const accelaSelectors = [
-    'select[id*="ddlRecordType"]',
-    'select[id*="RecordType"]',
-    'select[id*="ddlPermitType"]',
-    'select[id*="PermitType"]',
-    'select[id*="Type"][id*="ddl"]',
-  ];
-
-  for (const selector of accelaSelectors) {
+  // If we have a stored dropdown ID from a previous search, use it directly
+  if (storedDropdownId) {
+    console.log(`[${JURISDICTION}] Using stored dropdown ID: ${storedDropdownId}`);
     try {
-      const el = page.locator(selector).first();
-      if (await el.isVisible({ timeout: 2000 })) {
+      const el = page.locator(`select[id="${storedDropdownId}"]`).first();
+      if (await el.isVisible({ timeout: 3000 })) {
         dropdown = el;
-        dropdownId = await el.getAttribute('id') || selector;
-        console.log(`[${JURISDICTION}] Found dropdown with Accela selector: ${selector} (id: ${dropdownId})`);
-        break;
+        dropdownId = storedDropdownId;
+        console.log(`[${JURISDICTION}] Successfully found stored dropdown`);
+      } else {
+        console.log(`[${JURISDICTION}] Stored dropdown not visible, will search for it`);
       }
-    } catch {
-      continue;
+    } catch (error) {
+      console.log(`[${JURISDICTION}] Error finding stored dropdown: ${error}`);
+    }
+  }
+
+  // Method 1 (PRIORITY): Look for Accela-specific dropdown IDs - most reliable
+  if (!dropdown) {
+    const accelaSelectors = [
+      'select[id*="ddlRecordType"]',
+      'select[id*="RecordType"]',
+      'select[id*="ddlPermitType"]',
+      'select[id*="PermitType"]',
+      'select[id*="Type"][id*="ddl"]',
+    ];
+
+    for (const selector of accelaSelectors) {
+      try {
+        const el = page.locator(selector).first();
+        if (await el.isVisible({ timeout: 2000 })) {
+          dropdown = el;
+          dropdownId = await el.getAttribute('id') || selector;
+          console.log(`[${JURISDICTION}] Found dropdown with Accela selector: ${selector} (id: ${dropdownId})`);
+          break;
+        }
+      } catch {
+        continue;
+      }
     }
   }
 
@@ -308,19 +341,19 @@ async function selectDropdownByLabel(page: Page, labelText: string, optionText: 
         console.log(`[${JURISDICTION}] Selecting: "${targetOption}"`);
         await dropdown.selectOption({ label: targetOption });
         await page.waitForTimeout(2000);
-        return true;
+        return { success: true, dropdownId };
       } else {
         console.log(`[${JURISDICTION}] Warning: Could not find option "${optionText}"`);
         console.log(`[${JURISDICTION}] Available options: ${options.slice(0, 10).join(', ')}`);
-        return false;
+        return { success: false, dropdownId };
       }
     } catch (error) {
       console.log(`[${JURISDICTION}] Error selecting dropdown: ${error}`);
-      return false;
+      return { success: false, dropdownId: null };
     }
   } else {
     console.log(`[${JURISDICTION}] Warning: No dropdown found for "${labelText}"`);
-    return false;
+    return { success: false, dropdownId: null };
   }
 }
 
