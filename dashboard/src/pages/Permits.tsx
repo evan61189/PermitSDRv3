@@ -72,7 +72,7 @@ export default function Permits() {
   };
   const [dateRange, setDateRange] = useState(getDefaultDates);
 
-  const { data, isLoading, error, refetch } = usePermits(filters);
+  const { data, isLoading, error } = usePermits(filters);
 
   // Clear selection when filters/page changes
   useEffect(() => {
