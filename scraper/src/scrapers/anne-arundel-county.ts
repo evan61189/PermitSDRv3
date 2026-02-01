@@ -158,7 +158,7 @@ async function scrollToRenderPage(page: Page): Promise<void> {
 }
 
 async function selectDropdownByLabel(page: Page, labelText: string, optionText: string): Promise<boolean> {
-  console.log(`[${JURISDICTION}] Looking for "${labelText}" dropdown...`);
+  console.log(`[${JURISDICTION}] Looking for "${labelText}" dropdown to select "${optionText}"...`);
 
   // First, scroll to bottom to render all content
   await scrollToRenderPage(page);
@@ -169,22 +169,24 @@ async function selectDropdownByLabel(page: Page, labelText: string, optionText: 
   await page.waitForTimeout(1000);
 
   let dropdown = null;
+  let dropdownId = '';
 
-  // Method 1: Find by label text - most reliable for Accela portals
-  const labelSelectors = [
-    `span:has-text("${labelText}") >> xpath=ancestor::tr >> select`,
-    `td:has-text("${labelText}") >> xpath=following-sibling::td >> select`,
-    `label:has-text("${labelText}") >> xpath=following::select[1]`,
-    `text="${labelText}" >> xpath=ancestor::tr >> select`,
-    `span:text-is("${labelText}") >> xpath=ancestor::tr >> select`,
+  // Method 1 (PRIORITY): Look for Accela-specific dropdown IDs - most reliable
+  const accelaSelectors = [
+    'select[id*="ddlRecordType"]',
+    'select[id*="RecordType"]',
+    'select[id*="ddlPermitType"]',
+    'select[id*="PermitType"]',
+    'select[id*="Type"][id*="ddl"]',
   ];
 
-  for (const selector of labelSelectors) {
+  for (const selector of accelaSelectors) {
     try {
       const el = page.locator(selector).first();
       if (await el.isVisible({ timeout: 2000 })) {
         dropdown = el;
-        console.log(`[${JURISDICTION}] Found dropdown via label selector`);
+        dropdownId = await el.getAttribute('id') || selector;
+        console.log(`[${JURISDICTION}] Found dropdown with Accela selector: ${selector} (id: ${dropdownId})`);
         break;
       }
     } catch {
@@ -192,21 +194,23 @@ async function selectDropdownByLabel(page: Page, labelText: string, optionText: 
     }
   }
 
-  // Method 2: Look for Accela-specific dropdown IDs
+  // Method 2: Find by label text
   if (!dropdown) {
-    const accelaSelectors = [
-      'select[id*="ddlRecordType"]',
-      'select[id*="RecordType"]',
-      'select[id*="ddlPermitType"]',
-      'select[id*="PermitType"]',
+    const labelSelectors = [
+      `span:has-text("${labelText}") >> xpath=ancestor::tr >> select`,
+      `td:has-text("${labelText}") >> xpath=following-sibling::td >> select`,
+      `label:has-text("${labelText}") >> xpath=following::select[1]`,
+      `text="${labelText}" >> xpath=ancestor::tr >> select`,
+      `span:text-is("${labelText}") >> xpath=ancestor::tr >> select`,
     ];
 
-    for (const selector of accelaSelectors) {
+    for (const selector of labelSelectors) {
       try {
         const el = page.locator(selector).first();
-        if (await el.isVisible({ timeout: 1000 })) {
+        if (await el.isVisible({ timeout: 2000 })) {
           dropdown = el;
-          console.log(`[${JURISDICTION}] Found dropdown with Accela selector: ${selector}`);
+          dropdownId = await el.getAttribute('id') || 'label-based';
+          console.log(`[${JURISDICTION}] Found dropdown via label selector (id: ${dropdownId})`);
           break;
         }
       } catch {
@@ -215,17 +219,23 @@ async function selectDropdownByLabel(page: Page, labelText: string, optionText: 
     }
   }
 
-  // Method 3: Find dropdown containing target option keywords
+  // Method 3: Find dropdown containing target option keywords (fallback)
   if (!dropdown) {
     console.log(`[${JURISDICTION}] Scanning all dropdowns for matching options...`);
     const allSelects = page.locator('select');
     const count = await allSelects.count();
+    console.log(`[${JURISDICTION}] Found ${count} total dropdowns on page`);
 
     for (let i = 0; i < count; i++) {
       const select = allSelects.nth(i);
       try {
         if (!await select.isVisible()) continue;
+        const selectId = await select.getAttribute('id') || `index-${i}`;
         const options = await select.locator('option').allTextContents();
+
+        // Log first few options for debugging
+        console.log(`[${JURISDICTION}] Dropdown ${i} (id: ${selectId}) has ${options.length} options: ${options.slice(0, 5).join(', ')}...`);
+
         const hasMatch = options.some(opt => {
           const lower = opt.toLowerCase();
           const isNonResidential = lower.includes('non-residential') ||
@@ -240,7 +250,8 @@ async function selectDropdownByLabel(page: Page, labelText: string, optionText: 
         });
         if (hasMatch) {
           dropdown = select;
-          console.log(`[${JURISDICTION}] Found dropdown by option content at index ${i}`);
+          dropdownId = selectId;
+          console.log(`[${JURISDICTION}] Found dropdown by option content at index ${i} (id: ${dropdownId})`);
           break;
         }
       } catch {
@@ -255,6 +266,14 @@ async function selectDropdownByLabel(page: Page, labelText: string, optionText: 
       await dropdown.scrollIntoViewIfNeeded();
       await page.waitForTimeout(500);
       const options = await dropdown.locator('option').allTextContents();
+
+      // Log all available options for debugging
+      console.log(`[${JURISDICTION}] Dropdown (id: ${dropdownId}) has ${options.length} options:`);
+      const nonResOptions = options.filter(opt => {
+        const lower = opt.toLowerCase();
+        return lower.includes('non-residential') || lower.includes('non residential') || lower.includes('nonresidential');
+      });
+      console.log(`[${JURISDICTION}] Non-residential options: ${nonResOptions.join(' | ')}`);
 
       // Find best match - search for the specific option text
       const optionLower = optionText.toLowerCase();
