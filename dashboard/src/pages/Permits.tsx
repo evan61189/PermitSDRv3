@@ -71,6 +71,7 @@ export default function Permits() {
     };
   };
   const [dateRange, setDateRange] = useState(getDefaultDates);
+  const [scraperJurisdiction, setScraperJurisdiction] = useState<string>('');
 
   const { data, isLoading, error } = usePermits(filters);
 
@@ -135,6 +136,7 @@ export default function Permits() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          jurisdiction: scraperJurisdiction,
           runScoring: true,
           startDate: dateRange.start,
           endDate: dateRange.end,
@@ -546,7 +548,7 @@ export default function Permits() {
         </>
       )}
 
-      {/* Scraper Date Range Modal */}
+      {/* Scraper Modal */}
       {showScraperModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
@@ -554,33 +556,65 @@ export default function Permits() {
               Run Permit Scraper
             </h3>
             <p className="text-gray-600 mb-4">
-              Select a date range to scrape permits. The scraper will search for permits filed within this range.
+              Select a jurisdiction and date range to scrape permits.
             </p>
 
             <div className="space-y-4 mb-6">
+              {/* Jurisdiction Selection */}
               <div>
-                <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 mb-1">
-                  Start Date
+                <label htmlFor="scraperJurisdiction" className="block text-sm font-medium text-gray-700 mb-1">
+                  Jurisdiction
                 </label>
-                <input
-                  type="date"
-                  id="startDate"
-                  value={dateRange.start}
-                  onChange={(e) => setDateRange((prev) => ({ ...prev, start: e.target.value }))}
+                <select
+                  id="scraperJurisdiction"
+                  value={scraperJurisdiction}
+                  onChange={(e) => setScraperJurisdiction(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                >
+                  <optgroup label="Original Counties">
+                    <option value="">All Original Counties</option>
+                    <option value="howard_county_md">Howard County, MD</option>
+                    <option value="baltimore_city_md">Baltimore City, MD</option>
+                    <option value="anne_arundel_county_md">Anne Arundel County, MD</option>
+                  </optgroup>
+                  <optgroup label="New Counties">
+                    <option value="carroll_county_md">Carroll County, MD</option>
+                    <option value="frederick_county_md">Frederick County, MD</option>
+                  </optgroup>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {scraperJurisdiction === 'carroll_county_md' || scraperJurisdiction === 'frederick_county_md'
+                    ? 'Uses New Counties scraper (Playwright + AI extraction)'
+                    : 'Uses Original scraper (Accela API)'}
+                </p>
               </div>
-              <div>
-                <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 mb-1">
-                  End Date
-                </label>
-                <input
-                  type="date"
-                  id="endDate"
-                  value={dateRange.end}
-                  onChange={(e) => setDateRange((prev) => ({ ...prev, end: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+
+              {/* Date Range */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 mb-1">
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    id="startDate"
+                    value={dateRange.start}
+                    onChange={(e) => setDateRange((prev) => ({ ...prev, start: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 mb-1">
+                    End Date
+                  </label>
+                  <input
+                    type="date"
+                    id="endDate"
+                    value={dateRange.end}
+                    onChange={(e) => setDateRange((prev) => ({ ...prev, end: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
             </div>
 

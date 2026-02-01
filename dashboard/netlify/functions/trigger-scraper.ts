@@ -1,7 +1,21 @@
 import type { Handler } from '@netlify/functions';
 
 const GITHUB_REPO = 'evan61189/PermitSDRv3';
-const WORKFLOW_FILE = 'scrape.yml';
+
+// Map jurisdictions to their workflow files
+const ORIGINAL_COUNTIES = ['howard_county_md', 'baltimore_city_md', 'anne_arundel_county_md', 'baltimore_county_md', 'dc'];
+const NEW_COUNTIES = ['carroll_county_md', 'frederick_county_md'];
+
+function getWorkflowFile(jurisdiction: string): string {
+  if (!jurisdiction) {
+    // No jurisdiction specified - default to original scraper
+    return 'scrape.yml';
+  }
+  if (NEW_COUNTIES.includes(jurisdiction)) {
+    return 'scrape-new-counties.yml';
+  }
+  return 'scrape.yml';
+}
 
 export const handler: Handler = async (event) => {
   // Only allow POST requests
@@ -42,10 +56,13 @@ export const handler: Handler = async (event) => {
     // Ignore parse errors, use defaults
   }
 
+  // Determine which workflow to trigger based on jurisdiction
+  const workflowFile = getWorkflowFile(jurisdiction);
+
   try {
     // Trigger the GitHub Actions workflow
     const response = await fetch(
-      `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches`,
+      `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${workflowFile}/dispatches`,
       {
         method: 'POST',
         headers: {
@@ -66,11 +83,15 @@ export const handler: Handler = async (event) => {
     );
 
     if (response.status === 204) {
+      const workflowName = workflowFile === 'scrape-new-counties.yml'
+        ? 'New Counties (Carroll & Frederick)'
+        : 'Original Counties';
       return {
         statusCode: 200,
         body: JSON.stringify({
           success: true,
-          message: 'Scraper workflow triggered successfully',
+          message: `Scraper workflow triggered successfully (${workflowName})`,
+          workflow: workflowFile,
         }),
       };
     }
