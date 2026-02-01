@@ -648,11 +648,6 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
     const aiData = await extractAndScorePermit(permitNumber, JURISDICTION, pageText);
     permitData.aiData = aiData;
 
-    // Update permit number if AI found a better one
-    if (aiData.permitNumber && aiData.permitNumber !== permitNumber) {
-      permitData.recordNumber = aiData.permitNumber;
-    }
-
     // Log the extracted description for debugging
     console.log(`[${JURISDICTION}] AI extracted description: "${aiData.description?.substring(0, 100)}..."`);
     console.log(`[${JURISDICTION}] AI extracted - Address: "${aiData.address?.substring(0, 40)}...", Score: ${aiData.overallScore}`);
