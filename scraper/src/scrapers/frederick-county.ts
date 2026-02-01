@@ -625,15 +625,24 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
 
   try {
     // Wait for page to load
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(2000);
 
     // Expand the "Information" section to get the description of work
     await expandInformationSection(page);
+
+    // Wait for expanded content to fully render
+    await page.waitForTimeout(2000);
 
     // Get full page text for AI extraction
     const pageText = await page.evaluate(() => document.body.innerText);
     permitData.pageText = pageText;
     console.log(`[${JURISDICTION}] Got page text (${pageText.length} chars) for ${permitNumber}`);
+
+    // Log a snippet to help debug description extraction
+    if (pageText.toLowerCase().includes('description')) {
+      const descIdx = pageText.toLowerCase().indexOf('description');
+      console.log(`[${JURISDICTION}] Description context: "${pageText.substring(descIdx, descIdx + 200)}..."`);
+    }
 
     // Use AI to extract and score permit
     const aiData = await extractAndScorePermit(permitNumber, JURISDICTION, pageText);
@@ -644,6 +653,8 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
       permitData.recordNumber = aiData.permitNumber;
     }
 
+    // Log the extracted description for debugging
+    console.log(`[${JURISDICTION}] AI extracted description: "${aiData.description?.substring(0, 100)}..."`);
     console.log(`[${JURISDICTION}] AI extracted - Address: "${aiData.address?.substring(0, 40)}...", Score: ${aiData.overallScore}`);
 
   } catch (error) {
@@ -656,8 +667,18 @@ async function extractPermitDetails(page: Page, permitNumber: string): Promise<P
 async function expandInformationSection(page: Page): Promise<void> {
   console.log(`[${JURISDICTION}] Looking for Information section to expand...`);
 
+  // First scroll down to make sure all sections are visible
+  await page.evaluate(() => window.scrollTo(0, 500));
+  await page.waitForTimeout(500);
+
   // Various selectors for expandable Information sections
   const informationSelectors = [
+    // CIVICS-specific patterns (try these first)
+    '.section-title:has-text("Information")',
+    '.panel-title:has-text("Information")',
+    '.card-title:has-text("Information")',
+    '[class*="section-header"]:has-text("Information")',
+    '[class*="accordion"]:has-text("Information")',
     // Accordion/collapsible patterns
     'button:has-text("Information")',
     'a:has-text("Information")',
@@ -670,14 +691,17 @@ async function expandInformationSection(page: Page): Promise<void> {
     'h2:has-text("Information")',
     'h3:has-text("Information")',
     'h4:has-text("Information")',
-    // CIVICS-specific patterns
-    '.section-header:has-text("Information")',
+    'h5:has-text("Information")',
+    // More CIVICS patterns
     '.expandable:has-text("Information")',
     '[class*="expand"]:has-text("Information")',
     '[class*="collapse"]:has-text("Information")',
+    '[class*="toggle"]:has-text("Information")',
     // Generic clickable headers
     'div[role="button"]:has-text("Information")',
     'span[role="button"]:has-text("Information")',
+    // Try parent elements with clicks
+    'div:has(> span:has-text("Information"))',
   ];
 
   for (const selector of informationSelectors) {
