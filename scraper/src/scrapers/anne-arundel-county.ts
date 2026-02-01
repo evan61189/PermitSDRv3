@@ -8,13 +8,11 @@ const JURISDICTION: Jurisdiction = 'anne_arundel_county_md';
 const BASE_URL = 'https://aca-prod.accela.com/AACO/Cap/CapHome.aspx?module=Permits';
 const DROPDOWN_LABEL = 'Record Type';
 
-// Multiple record types to search for
+// Multiple record types to search for (one entry per permit type - keyword matching handles variations)
 const RECORD_TYPES_TO_SEARCH = [
   'Non Residential Alteration Permit',
   'Non-Residential New Structure, Addition, Accessory Structure Permit',
   'Non-Residential Tenant Improvement Permit',
-  'Non Residential Tenant Improvement',
-  'Nonresidential Tenant Improvement',
 ];
 
 // Default date range is last 3 days
