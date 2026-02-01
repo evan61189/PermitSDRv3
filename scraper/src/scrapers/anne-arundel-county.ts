@@ -11,6 +11,7 @@ const DROPDOWN_LABEL = 'Record Type';
 // Multiple record types to search for
 const RECORD_TYPES_TO_SEARCH = [
   'Non Residential Alteration Permit',
+  'Non-Residential New Structure, Addition, Accessory Structure Permit',
   'Non-Residential Tenant Improvement Permit',
   'Non Residential Tenant Improvement',
   'Nonresidential Tenant Improvement',
@@ -231,7 +232,10 @@ async function selectDropdownByLabel(page: Page, labelText: string, optionText: 
                                    lower.includes('non residential') ||
                                    lower.includes('nonresidential');
           const isRelevantType = lower.includes('alteration') ||
-                                 lower.includes('tenant improvement');
+                                 lower.includes('tenant improvement') ||
+                                 lower.includes('new structure') ||
+                                 lower.includes('addition') ||
+                                 lower.includes('accessory');
           return isNonResidential && isRelevantType;
         });
         if (hasMatch) {
@@ -257,13 +261,19 @@ async function selectDropdownByLabel(page: Page, labelText: string, optionText: 
       const exactMatch = options.find(opt => opt.trim().toLowerCase() === optionLower);
       const partialMatch = options.find(opt => opt.toLowerCase().includes(optionLower));
 
-      // If searching for tenant improvement, look for that specifically
+      // If searching for specific permit types, look for those keywords
       let keywordMatch = null;
       if (optionLower.includes('tenant improvement')) {
         keywordMatch = options.find(opt => {
           const lower = opt.toLowerCase();
           return (lower.includes('non-residential') || lower.includes('non residential') || lower.includes('nonresidential')) &&
                  lower.includes('tenant') && lower.includes('improvement');
+        });
+      } else if (optionLower.includes('new structure') || optionLower.includes('addition') || optionLower.includes('accessory')) {
+        keywordMatch = options.find(opt => {
+          const lower = opt.toLowerCase();
+          return (lower.includes('non-residential') || lower.includes('non residential') || lower.includes('nonresidential')) &&
+                 (lower.includes('new structure') || lower.includes('addition') || lower.includes('accessory'));
         });
       } else if (optionLower.includes('alteration')) {
         keywordMatch = options.find(opt => {
