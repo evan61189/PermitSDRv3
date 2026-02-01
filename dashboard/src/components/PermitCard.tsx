@@ -6,6 +6,9 @@ import { PROJECT_TYPE_NAMES, type ProjectType } from '../types';
 
 interface PermitCardProps {
   permit: PermitWithScore;
+  selectable?: boolean;
+  selected?: boolean;
+  onSelectChange?: (id: string, selected: boolean) => void;
 }
 
 function getScoreBadge(rating: string | null | undefined, score: number | null | undefined) {
@@ -51,7 +54,7 @@ function getProjectTypeBadge(projectType: string | null | undefined) {
   );
 }
 
-export default function PermitCard({ permit }: PermitCardProps) {
+export default function PermitCard({ permit, selectable = false, selected = false, onSelectChange }: PermitCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const handleDetailClick = (e: React.MouseEvent) => {
@@ -62,12 +65,28 @@ export default function PermitCard({ permit }: PermitCardProps) {
     }
   };
 
+  const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    onSelectChange?.(permit.id, e.target.checked);
+  };
+
   const hasAIInsights = permit.reasoning || (permit.recommended_actions && permit.recommended_actions.length > 0);
 
   return (
-    <div className="card p-5 hover:shadow-md transition-shadow">
+    <div className={`card p-5 hover:shadow-md transition-shadow ${selected ? 'ring-2 ring-blue-500 bg-blue-50' : ''}`}>
       <div className="flex items-start justify-between">
-        <div className="flex-1 min-w-0">
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          {selectable && (
+            <div className="pt-1">
+              <input
+                type="checkbox"
+                checked={selected}
+                onChange={handleCheckboxChange}
+                className="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+              />
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
           {/* Permit Number, Project Type, and AI Score */}
           <div className="flex items-center gap-2 mb-2 flex-wrap">
             <Link
@@ -178,6 +197,7 @@ export default function PermitCard({ permit }: PermitCardProps) {
               )}
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>

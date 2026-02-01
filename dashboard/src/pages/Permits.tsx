@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, ChevronLeft, ChevronRight, Play, Loader2, Calendar } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Play, Loader2, Calendar, Trash2, CheckSquare, Square } from 'lucide-react';
 import PermitCard from '../components/PermitCard';
-import { usePermits, type PermitFilters } from '../hooks/usePermits';
+import { usePermits, useDeleteSelectedPermits, type PermitFilters } from '../hooks/usePermits';
 import {
   JURISDICTION_NAMES,
   PROJECT_TYPE_NAMES,
@@ -53,6 +53,13 @@ export default function Permits() {
   const [scraperMessage, setScraperMessage] = useState('');
   const [showScraperModal, setShowScraperModal] = useState(false);
 
+  // Selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+
+  const deleteSelectedMutation = useDeleteSelectedPermits();
+
   // Date range state for scraper - default to last 7 days
   const getDefaultDates = () => {
     const end = new Date();
@@ -65,7 +72,56 @@ export default function Permits() {
   };
   const [dateRange, setDateRange] = useState(getDefaultDates);
 
-  const { data, isLoading, error } = usePermits(filters);
+  const { data, isLoading, error, refetch } = usePermits(filters);
+
+  // Clear selection when filters/page changes
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [filters]);
+
+  const handleSelectChange = (id: string, selected: boolean) => {
+    setSelectedIds(prev => {
+      const newSet = new Set(prev);
+      if (selected) {
+        newSet.add(id);
+      } else {
+        newSet.delete(id);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (!data?.data) return;
+    const allIds = data.data.map(p => p.id);
+    const allSelected = allIds.every(id => selectedIds.has(id));
+
+    if (allSelected) {
+      // Deselect all
+      setSelectedIds(new Set());
+    } else {
+      // Select all on current page
+      setSelectedIds(new Set(allIds));
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    try {
+      await deleteSelectedMutation.mutateAsync(Array.from(selectedIds));
+      setSelectedIds(new Set());
+      setShowDeleteModal(false);
+      setSelectionMode(false);
+    } catch (error) {
+      console.error('Error deleting permits:', error);
+    }
+  };
+
+  const toggleSelectionMode = () => {
+    if (selectionMode) {
+      setSelectedIds(new Set());
+    }
+    setSelectionMode(!selectionMode);
+  };
 
   const triggerScraper = async () => {
     setScraperStatus('loading');
@@ -158,6 +214,31 @@ export default function Permits() {
               {scraperMessage}
             </span>
           )}
+
+          {/* Selection Mode Toggle */}
+          <button
+            onClick={toggleSelectionMode}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+              selectionMode
+                ? 'bg-blue-100 text-blue-700 border border-blue-300'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {selectionMode ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+            {selectionMode ? 'Cancel Selection' : 'Select'}
+          </button>
+
+          {/* Delete Selected Button */}
+          {selectionMode && selectedIds.size > 0 && (
+            <button
+              onClick={() => setShowDeleteModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete ({selectedIds.size})
+            </button>
+          )}
+
           <button
             onClick={() => setShowScraperModal(true)}
             disabled={scraperStatus === 'loading'}
@@ -371,14 +452,45 @@ export default function Permits() {
       ) : (
         <>
           <div className="flex items-center justify-between text-sm text-gray-500">
-            <span>
-              Showing {((currentPage - 1) * PAGE_SIZE) + 1} - {Math.min(currentPage * PAGE_SIZE, data?.count || 0)} of {data?.count || 0} permits
-            </span>
+            <div className="flex items-center gap-4">
+              {selectionMode && (
+                <button
+                  onClick={handleSelectAll}
+                  className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  {data?.data && data.data.every(p => selectedIds.has(p.id)) ? (
+                    <>
+                      <CheckSquare className="w-4 h-4" />
+                      Deselect All
+                    </>
+                  ) : (
+                    <>
+                      <Square className="w-4 h-4" />
+                      Select All on Page
+                    </>
+                  )}
+                </button>
+              )}
+              <span>
+                Showing {((currentPage - 1) * PAGE_SIZE) + 1} - {Math.min(currentPage * PAGE_SIZE, data?.count || 0)} of {data?.count || 0} permits
+                {selectionMode && selectedIds.size > 0 && (
+                  <span className="ml-2 text-blue-600 font-medium">
+                    ({selectedIds.size} selected)
+                  </span>
+                )}
+              </span>
+            </div>
           </div>
 
           <div className="space-y-4">
             {data?.data.map((permit) => (
-              <PermitCard key={permit.id} permit={permit} />
+              <PermitCard
+                key={permit.id}
+                permit={permit}
+                selectable={selectionMode}
+                selected={selectedIds.has(permit.id)}
+                onSelectChange={handleSelectChange}
+              />
             ))}
           </div>
 
@@ -489,6 +601,49 @@ export default function Permits() {
               >
                 <Play className="w-4 h-4" />
                 Start Scraper
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Delete Selected Permits
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Are you sure you want to delete <span className="font-semibold text-red-600">{selectedIds.size}</span> selected permit{selectedIds.size !== 1 ? 's' : ''}?
+              This action cannot be undone.
+            </p>
+
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+              <p className="text-sm text-red-700">
+                This will permanently delete the selected permits and their associated AI scores.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                disabled={deleteSelectedMutation.isPending}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteSelected}
+                disabled={deleteSelectedMutation.isPending}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {deleteSelectedMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                {deleteSelectedMutation.isPending ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>

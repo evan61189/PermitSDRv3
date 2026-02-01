@@ -232,6 +232,51 @@ export function useDeleteAllPermits() {
   });
 }
 
+export function useDeleteSelectedPermits() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (permitIds: string[]): Promise<{ deleted: number }> => {
+      if (permitIds.length === 0) {
+        return { deleted: 0 };
+      }
+
+      // First delete associated ai_scores
+      const { error: scoresError } = await supabase
+        .from('ai_scores')
+        .delete()
+        .in('permit_id', permitIds);
+
+      if (scoresError) {
+        console.error('Error deleting AI scores:', scoresError);
+        throw scoresError;
+      }
+
+      // Then delete the permits
+      const { error: permitsError } = await supabase
+        .from('permits')
+        .delete()
+        .in('id', permitIds);
+
+      if (permitsError) {
+        console.error('Error deleting permits:', permitsError);
+        throw permitsError;
+      }
+
+      return { deleted: permitIds.length };
+    },
+    onSuccess: () => {
+      // Invalidate all permit-related queries to refresh the UI
+      queryClient.invalidateQueries({ queryKey: ['permits'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['permits-by-type'] });
+      queryClient.invalidateQueries({ queryKey: ['permits-by-jurisdiction'] });
+      queryClient.invalidateQueries({ queryKey: ['hot-opportunities'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline'] });
+    },
+  });
+}
+
 export function useUpdatePipelineStage() {
   const queryClient = useQueryClient();
 
