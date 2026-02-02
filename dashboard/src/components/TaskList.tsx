@@ -25,6 +25,7 @@ interface TaskListProps {
 export function TaskList({ permitId, compact = false }: TaskListProps) {
   const [showForm, setShowForm] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const { data: tasks, isLoading } = usePermitTasks(permitId);
   const createTask = useCreateTask();
@@ -35,11 +36,22 @@ export function TaskList({ permitId, compact = false }: TaskListProps) {
   const completedTasks = tasks?.filter((t) => t.completed) || [];
 
   const handleCreateTask = (task: { title: string; due_date?: string; priority: TaskPriority }) => {
-    createTask.mutate({
-      permit_id: permitId,
-      ...task,
-    });
-    setShowForm(false);
+    setError(null);
+    createTask.mutate(
+      {
+        permit_id: permitId,
+        ...task,
+      },
+      {
+        onSuccess: () => {
+          setShowForm(false);
+        },
+        onError: (err) => {
+          console.error('Task creation error:', err);
+          setError(err instanceof Error ? err.message : 'Failed to create task');
+        },
+      }
+    );
   };
 
   const handleToggleComplete = (task: Task) => {
@@ -80,7 +92,15 @@ export function TaskList({ permitId, compact = false }: TaskListProps) {
           onSubmit={handleCreateTask}
           onCancel={() => setShowForm(false)}
           compact={compact}
+          isSubmitting={createTask.isPending}
         />
+      )}
+
+      {/* Error Message */}
+      {error && (
+        <div className="p-2 bg-red-50 border border-red-200 text-red-700 rounded text-sm">
+          {error}
+        </div>
       )}
 
       {/* Incomplete Tasks */}
@@ -142,9 +162,10 @@ interface TaskFormProps {
   onSubmit: (task: { title: string; due_date?: string; priority: TaskPriority }) => void;
   onCancel: () => void;
   compact?: boolean;
+  isSubmitting?: boolean;
 }
 
-function TaskForm({ onSubmit, onCancel, compact }: TaskFormProps) {
+function TaskForm({ onSubmit, onCancel, compact, isSubmitting }: TaskFormProps) {
   const [title, setTitle] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('medium');
@@ -211,12 +232,12 @@ function TaskForm({ onSubmit, onCancel, compact }: TaskFormProps) {
         </button>
         <button
           type="submit"
-          disabled={!title.trim()}
+          disabled={!title.trim() || isSubmitting}
           className={`px-3 py-1.5 bg-clipper-gold text-white rounded-md hover:bg-clipper-gold-dark disabled:opacity-50 disabled:cursor-not-allowed ${
             compact ? 'text-xs' : 'text-sm'
           }`}
         >
-          Add Task
+          {isSubmitting ? 'Adding...' : 'Add Task'}
         </button>
       </div>
     </form>
