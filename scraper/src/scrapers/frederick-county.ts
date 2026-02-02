@@ -7,8 +7,8 @@ import type { DateRange } from './index.js';
 const JURISDICTION: Jurisdiction = 'frederick_county_md';
 const BASE_URL = 'https://planningandpermitting.frederickcountymd.gov/lookup-record';
 
-// Default date range is last 30 days
-const DEFAULT_DATE_RANGE_DAYS = 30;
+// Default date range is last 1 day (runs daily)
+const DEFAULT_DATE_RANGE_DAYS = 1;
 
 // Permit type to search
 const PERMIT_TYPE = 'Non Residential Building Permit';

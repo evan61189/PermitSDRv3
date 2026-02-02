@@ -9,8 +9,8 @@ const BASE_URL = 'https://aca-prod.accela.com/BALTIMORE/Cap/CapHome.aspx?module=
 const DROPDOWN_LABEL = 'Record Type';
 const RECORD_TYPE_TO_SELECT = 'Commercial and Multifamily Combo Permit';
 
-// Default date range is last 3 days
-const DEFAULT_DATE_RANGE_DAYS = 3;
+// Default date range is last 1 day (runs daily)
+const DEFAULT_DATE_RANGE_DAYS = 1;
 
 interface PermitData {
   recordNumber: string;
