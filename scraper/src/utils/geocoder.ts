@@ -85,9 +85,21 @@ export async function geocodeAddress(
   // Strip suite/unit numbers that can interfere with geocoding
   const cleanedAddress = stripSecondaryAddress(address);
 
+  // Handle Baltimore City specially - it's an independent city, not in a county
+  // Including "Baltimore City" as county confuses geocoders
+  let effectiveCounty = county;
+  let effectiveCity = city;
+
+  if (county?.toLowerCase().includes('baltimore city') ||
+      (city?.toLowerCase() === 'baltimore' && state?.toUpperCase() === 'MD')) {
+    // For Baltimore City, don't include county - just use "Baltimore, MD"
+    effectiveCounty = undefined;
+    effectiveCity = 'Baltimore';
+  }
+
   // Build full address string - include county for better accuracy
   // For Maryland counties, the county name helps Nominatim find the right location
-  const parts = [cleanedAddress, city, county, state, zipCode].filter(Boolean);
+  const parts = [cleanedAddress, effectiveCity, effectiveCounty, state, zipCode].filter(Boolean);
   const fullAddress = parts.join(', ');
 
   // Check cache first
