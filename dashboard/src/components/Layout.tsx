@@ -1,7 +1,8 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, FileText, Kanban, ClipboardList } from 'lucide-react';
+import { LayoutDashboard, FileText, Kanban, ClipboardList, LogOut } from 'lucide-react';
 import clsx from 'clsx';
 import { ChatBot } from './ChatBot';
+import { useAuth } from '../contexts/AuthContext';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -12,6 +13,7 @@ const navigation = [
 
 export default function Layout() {
   const location = useLocation();
+  const { user, signOut } = useAuth();
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -51,8 +53,22 @@ export default function Layout() {
             })}
           </nav>
 
-          {/* Footer */}
+          {/* User & Footer */}
           <div className="p-4 border-t border-clipper-navy-light">
+            {user && (
+              <div className="mb-3 pb-3 border-b border-clipper-navy-light">
+                <p className="text-xs text-gray-400 truncate" title={user.email || ''}>
+                  {user.email}
+                </p>
+                <button
+                  onClick={signOut}
+                  className="flex items-center gap-2 mt-2 text-xs text-gray-400 hover:text-white transition-colors"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Sign out
+                </button>
+              </div>
+            )}
             <div className="text-xs text-gray-400">
               <span className="text-clipper-gold font-semibold">Permit SDR</span> v3.0
               <br />
