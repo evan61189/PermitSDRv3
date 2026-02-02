@@ -15,16 +15,17 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { usePermit, useUpdateProjectContact } from '../hooks/usePermits';
+import { usePermit, useUpdateProjectContact, useUpdatePipelineStage } from '../hooks/usePermits';
 import OpportunityBadge from '../components/OpportunityBadge';
 import ScoreGauge from '../components/ScoreGauge';
 import TaskList from '../components/TaskList';
-import { PROJECT_TYPE_NAMES, JURISDICTION_NAMES, PIPELINE_STAGE_CONFIG } from '../types';
+import { PROJECT_TYPE_NAMES, JURISDICTION_NAMES, PIPELINE_STAGE_CONFIG, type PipelineStage } from '../types';
 
 export default function PermitDetail() {
   const { id } = useParams<{ id: string }>();
   const { data: permit, isLoading, error } = usePermit(id!);
   const updateContact = useUpdateProjectContact();
+  const updateStage = useUpdatePipelineStage();
   const [isEditingContact, setIsEditingContact] = useState(false);
   const [contactValue, setContactValue] = useState('');
 
@@ -199,20 +200,33 @@ export default function PermitDetail() {
             </div>
           </div>
 
-          {/* Pipeline Stage */}
-          {permit.pipeline_stage && (
-            <div className="flex items-center gap-3 mt-4">
+          {/* Pipeline Stage - Editable */}
+          <div className="flex items-center gap-3 mt-4">
+            <span className="text-sm text-gray-500">Pipeline Stage:</span>
+            <select
+              value={permit.pipeline_stage || ''}
+              onChange={(e) => {
+                const newStage = e.target.value as PipelineStage;
+                if (newStage) {
+                  updateStage.mutate({ permitId: permit.id, stage: newStage });
+                }
+              }}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-clipper-gold focus:border-transparent bg-white"
+            >
+              <option value="">Select stage...</option>
+              {Object.entries(PIPELINE_STAGE_CONFIG).map(([stage, config]) => (
+                <option key={stage} value={stage}>
+                  {config.label}
+                </option>
+              ))}
+            </select>
+            {permit.pipeline_stage && (
               <div
                 className="w-3 h-3 rounded-full"
                 style={{ backgroundColor: PIPELINE_STAGE_CONFIG[permit.pipeline_stage]?.color }}
               />
-              <span className="text-sm text-gray-500">
-                Pipeline Stage: <span className="font-medium text-gray-700">
-                  {PIPELINE_STAGE_CONFIG[permit.pipeline_stage]?.label}
-                </span>
-              </span>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         <div className="mt-4 pt-4 border-t border-gray-100">

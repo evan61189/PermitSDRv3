@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Calendar, ChevronDown, GripVertical, Building2, MapPin, User, X, Check, ClipboardList, AlertCircle } from 'lucide-react';
+import { Calendar, ChevronDown, GripVertical, Building2, MapPin, User, X, Check, ClipboardList, AlertCircle, Search } from 'lucide-react';
 import {
   DndContext,
   DragOverlay,
@@ -307,6 +307,7 @@ export default function Pipeline() {
   const [dateRange, setDateRange] = useState(getDefaultDateRange);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [activePermit, setActivePermit] = useState<PermitWithScore | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const { data: permitsByStage, isLoading } = usePermitsByPipelineStage(
     dateRange.from,
@@ -360,20 +361,47 @@ export default function Pipeline() {
   // Pipeline stages
   const pipelineStages: PipelineStage[] = ['lead', 'researching', 'contact_made', 'meeting_booked', 'not_interested'];
 
+  // Filter permits by search query
+  const filteredPermitsByStage = useMemo(() => {
+    if (!permitsByStage) return null;
+    if (!searchQuery.trim()) return permitsByStage;
+
+    const query = searchQuery.toLowerCase().trim();
+    const filtered: Record<PipelineStage, PermitWithScore[]> = {} as Record<PipelineStage, PermitWithScore[]>;
+
+    for (const stage of pipelineStages) {
+      filtered[stage] = (permitsByStage[stage] || []).filter((permit) => {
+        const searchFields = [
+          permit.permit_number,
+          permit.address,
+          permit.city,
+          permit.description,
+          permit.project_contact,
+          permit.applicant_name,
+          permit.project_type,
+        ].filter(Boolean).join(' ').toLowerCase();
+
+        return searchFields.includes(query);
+      });
+    }
+
+    return filtered;
+  }, [permitsByStage, searchQuery]);
+
   // Get all permit IDs for task counts
   const allPermitIds = useMemo(() => {
-    if (!permitsByStage) return [];
-    return pipelineStages.flatMap((stage) => permitsByStage[stage]?.map((p) => p.id) || []);
-  }, [permitsByStage]);
+    if (!filteredPermitsByStage) return [];
+    return pipelineStages.flatMap((stage) => filteredPermitsByStage[stage]?.map((p) => p.id) || []);
+  }, [filteredPermitsByStage]);
 
   // Fetch task counts for all permits
   const { data: taskCounts = {} } = usePermitTaskCounts(allPermitIds);
 
   // Calculate total count
   const totalCount = useMemo(() => {
-    if (!permitsByStage) return 0;
-    return pipelineStages.reduce((sum, stage) => sum + (permitsByStage[stage]?.length || 0), 0);
-  }, [permitsByStage]);
+    if (!filteredPermitsByStage) return 0;
+    return pipelineStages.reduce((sum, stage) => sum + (filteredPermitsByStage[stage]?.length || 0), 0);
+  }, [filteredPermitsByStage]);
 
   return (
     <DndContext
@@ -392,8 +420,29 @@ export default function Pipeline() {
             </p>
           </div>
 
-          {/* Date Range Picker */}
-          <div className="relative">
+          <div className="flex items-center gap-3">
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search permits..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 pr-4 py-2 w-64 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clipper-gold focus:border-transparent"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Date Range Picker */}
+            <div className="relative">
             <button
               onClick={() => setShowDatePicker(!showDatePicker)}
               className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
@@ -458,6 +507,7 @@ export default function Pipeline() {
               </div>
             )}
           </div>
+          </div>
         </div>
 
         {/* Stats Bar */}
@@ -474,7 +524,7 @@ export default function Pipeline() {
                 style={{ backgroundColor: PIPELINE_STAGE_CONFIG[stage].color }}
               />
               <span className="text-sm text-gray-600">
-                {PIPELINE_STAGE_CONFIG[stage].label}: <span className="font-semibold">{permitsByStage?.[stage]?.length || 0}</span>
+                {PIPELINE_STAGE_CONFIG[stage].label}: <span className="font-semibold">{filteredPermitsByStage?.[stage]?.length || 0}</span>
               </span>
             </div>
           ))}
@@ -491,7 +541,7 @@ export default function Pipeline() {
               <PipelineColumn
                 key={stage}
                 stage={stage}
-                permits={permitsByStage?.[stage] || []}
+                permits={filteredPermitsByStage?.[stage] || []}
                 taskCounts={taskCounts}
                 onUpdateContact={handleUpdateContact}
               />
