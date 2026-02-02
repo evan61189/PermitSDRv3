@@ -15,8 +15,8 @@ const RECORD_TYPES_TO_SEARCH = [
   'Non-Residential Tenant Improvement Permit',
 ];
 
-// Default date range is last 3 days
-const DEFAULT_DATE_RANGE_DAYS = 3;
+// Default date range is last 1 day (runs daily)
+const DEFAULT_DATE_RANGE_DAYS = 1;
 
 interface PermitData {
   recordNumber: string;

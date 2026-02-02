@@ -7,8 +7,8 @@ import type { DateRange } from './index.js';
 const JURISDICTION: Jurisdiction = 'carroll_county_md';
 const BASE_URL = 'https://amprod.carrollcountymd.gov/CitizenAccess/Cap/CapHome.aspx?module=Permits&TabName=Permits&TabList=HOME%7C0%7CPermits%7C1%7CPlanning%7C2%7CLICENSES%7C3%7CCurrentTabIndex%7C1';
 
-// Default date range is last 30 days (commercial permits don't come in as frequently)
-const DEFAULT_DATE_RANGE_DAYS = 30;
+// Default date range is last 1 day (runs daily)
+const DEFAULT_DATE_RANGE_DAYS = 1;
 
 // Permit types to search and their corresponding record prefixes
 const PERMIT_TYPE_CONFIG: Array<{ permitType: string; recordPrefix: string }> = [
