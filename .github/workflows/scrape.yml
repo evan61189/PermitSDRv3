@@ -2,8 +2,8 @@ name: Scrape Permits
 
 on:
   schedule:
-    # Run every 3 days at 6 AM UTC (1 AM EST)
-    - cron: '0 6 */3 * *'
+    # Run daily at 6 AM UTC (1 AM EST) for previous day's permits
+    - cron: '0 6 * * *'
   workflow_dispatch:
     inputs:
       jurisdiction:
