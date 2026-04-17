@@ -1,11 +1,11 @@
 import { Page } from 'playwright';
-import { getPage } from '../utils/browser.js';
+import { getPage, screenshotOnFailure } from '../utils/browser.js';
 import { extractAndScorePermit, AIExtractedPermit } from '../utils/ai-scorer.js';
 import type { Permit, ScraperResult, Jurisdiction } from '../types/index.js';
 import type { DateRange } from './index.js';
 
 const JURISDICTION: Jurisdiction = 'howard_county_md';
-const BASE_URL = 'https://dilp.howardcountymd.gov/CitizenAccess/Cap/CapHome.aspx?module=Building&TabName=HOME';
+const BASE_URL = 'https://accela1.howardcountymd.gov/citizenaccess/Cap/CapHome.aspx?module=Building&TabName=Building';
 const DROPDOWN_LABEL = 'Permit Type';
 
 // Multiple permit types to search for
@@ -98,7 +98,7 @@ export async function scrapeHowardCounty(dateRange?: DateRange): Promise<Scraper
         }
       } catch (typeError) {
         console.error(`[${JURISDICTION}] Error searching for "${permitType}":`, typeError);
-        // Continue to next permit type
+        await screenshotOnFailure(page, JURISDICTION, `search-${permitType.replace(/\s+/g, '-')}`);
       }
     }
 
@@ -332,6 +332,7 @@ async function clickSearchButton(page: Page): Promise<void> {
     'a[id*="lnkSearch"]',
     'a[id$="_lnkSearch"]',
     'a[id*="btnSearch"]',
+    '[id*="btnNewSearch"]',
   ];
 
   for (const selector of accelaButtonSelectors) {
@@ -439,6 +440,7 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
     await page.waitForSelector('table tbody tr, .ACA_Grid tr, [id*="GridView"] tr', { timeout: 15000 });
   } catch {
     console.log(`[${JURISDICTION}] No results table found`);
+    await screenshotOnFailure(page, JURISDICTION, 'no-results-table');
     return permits;
   }
 

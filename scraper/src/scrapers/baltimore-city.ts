@@ -1,5 +1,5 @@
 import { Page } from 'playwright';
-import { getPage } from '../utils/browser.js';
+import { getPage, screenshotOnFailure } from '../utils/browser.js';
 import { extractAndScorePermit, AIExtractedPermit } from '../utils/ai-scorer.js';
 import type { Permit, ScraperResult, Jurisdiction } from '../types/index.js';
 import type { DateRange } from './index.js';
@@ -82,6 +82,7 @@ export async function scrapeBaltimoreCityMD(dateRange?: DateRange): Promise<Scra
     };
   } catch (error) {
     console.error(`[${JURISDICTION}] Error during scrape:`, error);
+    if (page) await screenshotOnFailure(page, JURISDICTION, 'scrape-error');
     return {
       jurisdiction: JURISDICTION,
       permits,
@@ -289,6 +290,7 @@ async function clickSearchButton(page: Page): Promise<void> {
     'a[id*="lnkSearch"]',
     'a[id$="_lnkSearch"]',
     'a[id*="btnSearch"]',
+    '[id*="btnNewSearch"]',
   ];
 
   for (const selector of accelaButtonSelectors) {
@@ -396,6 +398,7 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
     await page.waitForSelector('table tbody tr, .ACA_Grid tr, [id*="GridView"] tr', { timeout: 15000 });
   } catch {
     console.log(`[${JURISDICTION}] No results table found`);
+    await screenshotOnFailure(page, JURISDICTION, 'no-results-table');
     return permits;
   }
 
