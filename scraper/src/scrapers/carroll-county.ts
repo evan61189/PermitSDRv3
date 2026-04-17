@@ -1,11 +1,11 @@
 import { Page } from 'playwright';
-import { getPage } from '../utils/browser.js';
+import { getPage, screenshotOnFailure } from '../utils/browser.js';
 import { extractAndScorePermit, AIExtractedPermit } from '../utils/ai-scorer.js';
 import type { Permit, ScraperResult, Jurisdiction } from '../types/index.js';
 import type { DateRange } from './index.js';
 
 const JURISDICTION: Jurisdiction = 'carroll_county_md';
-const BASE_URL = 'https://amprod.carrollcountymd.gov/CitizenAccess/Cap/CapHome.aspx?module=Permits&TabName=Permits&TabList=HOME%7C0%7CPermits%7C1%7CPlanning%7C2%7CLICENSES%7C3%7CCurrentTabIndex%7C1';
+const BASE_URL = 'https://amprod.carrollcountymd.gov/citizenaccess/Cap/CapHome.aspx?module=Permits&TabName=Permits';
 
 // Default date range is last 1 day (runs daily)
 const DEFAULT_DATE_RANGE_DAYS = 1;
@@ -89,6 +89,7 @@ export async function scrapeCarrollCounty(dateRange?: DateRange): Promise<Scrape
         }
       } catch (typeError) {
         console.error(`[${JURISDICTION}] Error searching for "${permitType}":`, typeError);
+        await screenshotOnFailure(page, JURISDICTION, `search-${permitType.replace(/\s+/g, '-')}`);
       }
     }
 
@@ -155,6 +156,7 @@ async function selectPermitType(page: Page, permitType: string): Promise<boolean
 
   // Method 1: Find by common Accela dropdown IDs
   const accelaSelectors = [
+    'select[id*="ddlGSPermitType"]',
     'select[id*="ddlPermitType"]',
     'select[id*="PermitType"]',
     'select[id*="ddlRecordType"]',
@@ -314,6 +316,7 @@ async function processPermitResults(page: Page, seenPermitNumbers: Set<string>, 
     await page.waitForSelector('table tbody tr, .ACA_Grid tr, [id*="GridView"] tr', { timeout: 15000 });
   } catch {
     console.log(`[${JURISDICTION}] No results table found`);
+    await screenshotOnFailure(page, JURISDICTION, 'no-results-table');
     return permits;
   }
 

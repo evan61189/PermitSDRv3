@@ -1,5 +1,5 @@
 import { Page } from 'playwright';
-import { getPage } from '../utils/browser.js';
+import { getPage, screenshotOnFailure } from '../utils/browser.js';
 import { extractAndScorePermit, AIExtractedPermit } from '../utils/ai-scorer.js';
 import type { Permit, ScraperResult, Jurisdiction } from '../types/index.js';
 import type { DateRange } from './index.js';
@@ -105,7 +105,7 @@ export async function scrapeAnneArundelCounty(dateRange?: DateRange): Promise<Sc
         }
       } catch (typeError) {
         console.error(`[${JURISDICTION}] Error searching for "${recordType}":`, typeError);
-        // Continue to next record type
+        await screenshotOnFailure(page, JURISDICTION, `search-${recordType.replace(/\s+/g, '-')}`);
       }
     }
 
@@ -203,6 +203,7 @@ async function selectDropdownByLabel(page: Page, labelText: string, optionText: 
   // Method 1 (PRIORITY): Look for Accela-specific dropdown IDs - most reliable
   if (!dropdown) {
     const accelaSelectors = [
+      'select[id*="ddlGSPermitType"]',
       'select[id*="ddlRecordType"]',
       'select[id*="RecordType"]',
       'select[id*="ddlPermitType"]',
@@ -403,6 +404,7 @@ async function clickSearchButton(page: Page): Promise<void> {
     'a[id*="lnkSearch"]',
     'a[id$="_lnkSearch"]',
     'a[id*="btnSearch"]',
+    '[id*="btnNewSearch"]',
   ];
 
   for (const selector of accelaButtonSelectors) {
@@ -510,6 +512,7 @@ async function processPermitResults(page: Page): Promise<PermitData[]> {
     await page.waitForSelector('table tbody tr, .ACA_Grid tr, [id*="GridView"] tr', { timeout: 15000 });
   } catch {
     console.log(`[${JURISDICTION}] No results table found`);
+    await screenshotOnFailure(page, JURISDICTION, 'no-results-table');
     return permits;
   }
 

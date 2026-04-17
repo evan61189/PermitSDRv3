@@ -1,5 +1,5 @@
 import { Page } from 'playwright';
-import { getPage } from '../utils/browser.js';
+import { getPage, screenshotOnFailure } from '../utils/browser.js';
 import { extractAndScorePermit, AIExtractedPermit } from '../utils/ai-scorer.js';
 import type { Permit, ScraperResult, Jurisdiction } from '../types/index.js';
 import type { DateRange } from './index.js';
@@ -53,6 +53,7 @@ export async function scrapeFrederickcounty(dateRange?: DateRange): Promise<Scra
     const checkedPermitType = await selectPermitType(page, PERMIT_TYPE);
     if (!checkedPermitType) {
       console.log(`[${JURISDICTION}] Could not find "${PERMIT_TYPE}" checkbox`);
+      await screenshotOnFailure(page, JURISDICTION, 'checkbox-not-found');
       return {
         jurisdiction: JURISDICTION,
         permits,
@@ -126,6 +127,8 @@ async function selectPermitType(page: Page, permitType: string): Promise<boolean
 
   // Try multiple selectors for the checkbox
   const checkboxSelectors = [
+    `input[type="checkbox"][value="NONRESBLDG"]`,
+    `input[type="checkbox"][id*="NONRESBLDG"]`,
     `input[type="checkbox"][id*="Non"][id*="Residential"]`,
     `input[type="checkbox"][name*="Non"][name*="Residential"]`,
     `input[type="checkbox"][value*="Non Residential"]`,
@@ -392,6 +395,7 @@ async function processPermitResults(page: Page, seenPermitNumbers: Set<string>):
     await page.waitForSelector('a:has-text("View Details"), button:has-text("View Details")', { timeout: 15000 });
   } catch {
     console.log(`[${JURISDICTION}] No "View Details" links found - possibly no results`);
+    await screenshotOnFailure(page, JURISDICTION, 'no-results');
     return permits;
   }
 

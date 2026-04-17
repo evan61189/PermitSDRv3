@@ -2,6 +2,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import type { PermitWithScore, DashboardStats, Jurisdiction, ProjectType, OpportunityRating, PipelineStage } from '../types';
 
+function thirtyDaysAgo(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 30);
+  return d.toISOString();
+}
+
 export interface PermitFilters {
   jurisdiction?: Jurisdiction;
   projectType?: ProjectType;
@@ -57,9 +63,7 @@ export function usePermits(filters: PermitFilters = {}) {
       }
 
       // Date range filtering (default to last 30 days if not specified)
-      if (filters.dateFrom) {
-        query = query.gte('created_at', filters.dateFrom);
-      }
+      query = query.gte('created_at', filters.dateFrom || thirtyDaysAgo());
       if (filters.dateTo) {
         query = query.lte('created_at', filters.dateTo);
       }
@@ -108,13 +112,21 @@ export function useDashboardStats() {
     queryKey: ['dashboard-stats'],
     queryFn: async (): Promise<DashboardStats> => {
       const { data, error } = await supabase
-        .from('dashboard_stats')
-        .select('*')
-        .single();
+        .from('permits_with_scores')
+        .select('opportunity_rating')
+        .gte('created_at', thirtyDaysAgo());
 
       if (error) throw error;
 
-      return data;
+      const permits = data || [];
+      return {
+        total_permits: permits.length,
+        hot_opportunities: permits.filter(p => p.opportunity_rating === 'hot').length,
+        warm_opportunities: permits.filter(p => p.opportunity_rating === 'warm').length,
+        cold_opportunities: permits.filter(p => p.opportunity_rating === 'cold').length,
+        not_relevant: permits.filter(p => p.opportunity_rating === 'not_relevant').length,
+        unscored: permits.filter(p => !p.opportunity_rating).length,
+      };
     },
   });
 }
@@ -125,7 +137,8 @@ export function usePermitsByType() {
     queryFn: async () => {
       const res = await supabase
         .from('permits')
-        .select('project_type');
+        .select('project_type')
+        .gte('created_at', thirtyDaysAgo());
 
       if (res.error) throw res.error;
 
@@ -148,7 +161,8 @@ export function usePermitsByJurisdiction() {
     queryFn: async () => {
       const res = await supabase
         .from('permits')
-        .select('source_jurisdiction');
+        .select('source_jurisdiction')
+        .gte('created_at', thirtyDaysAgo());
 
       if (res.error) throw res.error;
 
@@ -173,6 +187,7 @@ export function useHotOpportunities(limit = 10) {
         .from('permits_with_scores')
         .select('*')
         .eq('opportunity_rating', 'hot')
+        .gte('created_at', thirtyDaysAgo())
         .order('overall_score', { ascending: false })
         .limit(limit);
 
@@ -192,6 +207,7 @@ export function usePermitsForMap(limit = 100) {
       const { data, error } = await supabase
         .from('permits_with_scores')
         .select('*')
+        .gte('created_at', thirtyDaysAgo())
         .order('overall_score', { ascending: false, nullsFirst: false })
         .limit(limit);
 
@@ -415,7 +431,8 @@ export function useTopApplicants(limit = 5) {
     queryFn: async (): Promise<ApplicantInsight[]> => {
       const { data, error } = await supabase
         .from('permits')
-        .select('applicant_name, estimated_value');
+        .select('applicant_name, estimated_value')
+        .gte('created_at', thirtyDaysAgo());
 
       if (error) throw error;
 
@@ -449,7 +466,8 @@ export function useTopApplicantsByCounty(limitPerCounty = 3) {
     queryFn: async (): Promise<ApplicantByCountyInsight[]> => {
       const { data, error } = await supabase
         .from('permits')
-        .select('applicant_name, county, estimated_value, source_jurisdiction');
+        .select('applicant_name, county, estimated_value, source_jurisdiction')
+        .gte('created_at', thirtyDaysAgo());
 
       if (error) throw error;
 
@@ -502,7 +520,8 @@ export function useTopContractors(limit = 5) {
     queryFn: async (): Promise<ContractorInsight[]> => {
       const { data, error } = await supabase
         .from('permits')
-        .select('contractor_name, estimated_value');
+        .select('contractor_name, estimated_value')
+        .gte('created_at', thirtyDaysAgo());
 
       if (error) throw error;
 
@@ -536,7 +555,8 @@ export function useValueInsights() {
     queryFn: async (): Promise<ValueInsights> => {
       const { data, error } = await supabase
         .from('permits')
-        .select('estimated_value, project_type');
+        .select('estimated_value, project_type')
+        .gte('created_at', thirtyDaysAgo());
 
       if (error) throw error;
 
@@ -612,9 +632,12 @@ export function usePermitTrends(weeks = 8) {
   return useQuery({
     queryKey: ['permit-trends', weeks],
     queryFn: async (): Promise<WeeklyTrend[]> => {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - (weeks * 7));
       const { data, error } = await supabase
         .from('permits')
-        .select('created_at, estimated_value');
+        .select('created_at, estimated_value')
+        .gte('created_at', cutoff.toISOString());
 
       if (error) throw error;
 
@@ -665,9 +688,12 @@ export function useCompaniesToWatch(limit = 5) {
   return useQuery({
     queryKey: ['companies-to-watch', limit],
     queryFn: async (): Promise<CompanyToWatch[]> => {
+      const sixtyDaysCutoff = new Date();
+      sixtyDaysCutoff.setDate(sixtyDaysCutoff.getDate() - 60);
       const { data, error } = await supabase
         .from('permits')
-        .select('applicant_name, created_at, estimated_value');
+        .select('applicant_name, created_at, estimated_value')
+        .gte('created_at', sixtyDaysCutoff.toISOString());
 
       if (error) throw error;
 
@@ -733,9 +759,12 @@ export function useProjectTypeTrends() {
   return useQuery({
     queryKey: ['project-type-trends'],
     queryFn: async (): Promise<ProjectTypeTrend[]> => {
+      const sixtyDaysCutoff = new Date();
+      sixtyDaysCutoff.setDate(sixtyDaysCutoff.getDate() - 60);
       const { data, error } = await supabase
         .from('permits')
-        .select('project_type, created_at');
+        .select('project_type, created_at')
+        .gte('created_at', sixtyDaysCutoff.toISOString());
 
       if (error) throw error;
 
