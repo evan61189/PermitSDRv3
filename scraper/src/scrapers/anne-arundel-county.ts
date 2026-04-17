@@ -203,6 +203,7 @@ async function selectDropdownByLabel(page: Page, labelText: string, optionText: 
   // Method 1 (PRIORITY): Look for Accela-specific dropdown IDs - most reliable
   if (!dropdown) {
     const accelaSelectors = [
+      'select[id*="ddlGSPermitType"]',
       'select[id*="ddlRecordType"]',
       'select[id*="RecordType"]',
       'select[id*="ddlPermitType"]',

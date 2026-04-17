@@ -23,6 +23,7 @@ export async function getBrowser(): Promise<Browser> {
 export async function getPage(): Promise<{ page: Page; context: BrowserContext }> {
   const browser = await getBrowser();
   const context = await browser.newContext({
+    ignoreHTTPSErrors: true,
     userAgent:
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
     viewport: { width: 1920, height: 1080 },

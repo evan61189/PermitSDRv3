@@ -156,6 +156,7 @@ async function selectPermitType(page: Page, permitType: string): Promise<boolean
 
   // Method 1: Find by common Accela dropdown IDs
   const accelaSelectors = [
+    'select[id*="ddlGSPermitType"]',
     'select[id*="ddlPermitType"]',
     'select[id*="PermitType"]',
     'select[id*="ddlRecordType"]',

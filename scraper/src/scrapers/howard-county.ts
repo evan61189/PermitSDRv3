@@ -5,7 +5,7 @@ import type { Permit, ScraperResult, Jurisdiction } from '../types/index.js';
 import type { DateRange } from './index.js';
 
 const JURISDICTION: Jurisdiction = 'howard_county_md';
-const BASE_URL = 'https://accela1.howardcountymd.gov/citizenaccess/Cap/CapHome.aspx?module=Building&TabName=Building';
+const BASE_URL = 'https://dilp.howardcountymd.gov/CitizenAccess/Cap/CapHome.aspx?module=Building&TabName=HOME';
 const DROPDOWN_LABEL = 'Permit Type';
 
 // Multiple permit types to search for
@@ -198,6 +198,7 @@ async function selectDropdownByLabel(page: Page, labelText: string, optionText: 
   // Method 2: Look for Accela-specific dropdown IDs
   if (!dropdown) {
     const accelaSelectors = [
+      'select[id*="ddlGSPermitType"]',
       'select[id*="ddlPermitType"]',
       'select[id*="PermitType"]',
       'select[id*="ddlRecordType"]',

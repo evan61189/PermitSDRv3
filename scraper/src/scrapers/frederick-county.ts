@@ -127,6 +127,8 @@ async function selectPermitType(page: Page, permitType: string): Promise<boolean
 
   // Try multiple selectors for the checkbox
   const checkboxSelectors = [
+    `input[type="checkbox"][value="NONRESBLDG"]`,
+    `input[type="checkbox"][id*="NONRESBLDG"]`,
     `input[type="checkbox"][id*="Non"][id*="Residential"]`,
     `input[type="checkbox"][name*="Non"][name*="Residential"]`,
     `input[type="checkbox"][value*="Non Residential"]`,
