@@ -132,13 +132,27 @@ async function main() {
   }
 
   const totalPermits = results.reduce((sum, r) => sum + r.permits.length, 0);
-  const allSuccess = results.every(r => r.success);
+  const succeeded = results.filter(r => r.success);
+  const failed = results.filter(r => !r.success);
+
+  // A single county portal being temporarily unavailable (e.g. Frederick's
+  // "Service unavailable") or changing its page structure should NOT fail the
+  // whole scheduled job. Failing the job creates noisy alerts and can halt the
+  // pipeline even though the other counties scraped fine. Only exit non-zero on
+  // a *systemic* failure -- every jurisdiction failed -- which points at a real
+  // problem (DB write outage, bad credentials, or a code error) rather than one
+  // flaky government website.
+  const systemicFailure = succeeded.length === 0 && failed.length > 0;
 
   console.log('');
   console.log(`Total permits scraped: ${totalPermits}`);
-  console.log(`Overall status: ${allSuccess ? 'SUCCESS' : 'PARTIAL/FAILED'}`);
+  console.log(`Jurisdictions succeeded: ${succeeded.length}/${results.length}`);
+  if (failed.length > 0) {
+    console.log(`Jurisdictions with issues: ${failed.map(r => `${r.jurisdiction} (${r.error ?? 'unknown error'})`).join(', ')}`);
+  }
+  console.log(`Overall status: ${systemicFailure ? 'FAILED' : failed.length > 0 ? 'PARTIAL' : 'SUCCESS'}`);
 
-  process.exit(allSuccess ? 0 : 1);
+  process.exit(systemicFailure ? 1 : 0);
 }
 
 main().catch((error) => {
